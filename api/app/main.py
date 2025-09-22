@@ -1,5 +1,9 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlmodel import Session, select
+
+from app.core.database import get_session
+from app.models import Document
 
 # Instance of FastAPI
 app = FastAPI(title="ParseIQ API", version="0.1.0")
@@ -17,3 +21,9 @@ app.add_middleware(
 @app.get("/status")
 def get_status():
     return {"status": "API is running"}
+
+
+@app.get("/debug/docs-count")
+def docs_count(session: Session = Depends(get_session)):
+    count = session.exec(select(Document)).all()
+    return {"documents": len(count)}
