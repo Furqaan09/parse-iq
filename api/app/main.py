@@ -4,6 +4,7 @@ from sqlmodel import Session, select
 
 from app.core.database import get_session
 from app.models import Document
+from app.routes.documents import router as documents_router
 
 # Instance of FastAPI
 app = FastAPI(title="ParseIQ API", version="0.1.0")
@@ -22,8 +23,9 @@ app.add_middleware(
 def get_status():
     return {"status": "API is running"}
 
-
 @app.get("/debug/docs-count")
 def docs_count(session: Session = Depends(get_session)):
     count = session.exec(select(Document)).all()
     return {"documents": len(count)}
+
+app.include_router(documents_router)
