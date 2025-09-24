@@ -38,3 +38,6 @@ venv.bak/
 
 # Vite
 frontend/ .vite/
+
+# Storage files
+api/storage/
