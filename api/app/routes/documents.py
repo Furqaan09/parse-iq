@@ -80,7 +80,7 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
     # Handle name collisions by adding a counter suffix
     counter = 1
     while dest_path.exists():
-        dest_path = dir_path / f"{Path(file.filename)}_{counter}{Path(file.filename).suffix}"
+        dest_path = dir_path / f"{Path(file.filename).stem}_{counter}{Path(file.filename).suffix}"
         counter += 1
 
     # Save the file on disk

@@ -1,38 +1,33 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import UploadBox from "./components/UploadBox"
+import { useEffect, useState } from "react"
 
-function App() {
-    const [count, setCount] = useState(0)
+export default function App() {
+    const [status, setStatus] = useState("checking...")
+
+    useEffect(() => {
+        fetch("/api/status")
+            .then((r) => r.json())
+            .then((d) => setStatus(d.status))
+            .catch(() => setStatus("down"))
+    }, [])
 
     return (
-        <>
-            <div className="bg-red-500 text-white p-4 rounded-lg">
-                Tailwind v4 is working 🚀
+        <main className="min-h-screen w-screen bg-gray-50 text-gray-900">
+            <div className="mx-auto max-w-3xl p-6">
+                <header className="mb-6">
+                    <h1 className="text-3xl font-bold">ParseIQ</h1>
+                    <p className="text-sm text-gray-600">Your everyday life-admin copilot</p>
+                </header>
+
+                <section className="mb-6 rounded-2xl border bg-white p-6 shadow-sm">
+                    <h2 className="mb-2 text-xl font-semibold">API status</h2>
+                    <div className="inline-block rounded-full bg-gray-100 px-3 py-1 text-sm">
+                        {status}
+                    </div>
+                </section>
+
+                <UploadBox />
             </div>
-            <div>
-                <a href="https://vite.dev" target="_blank">
-                    <img src={viteLogo} className="logo" alt="Vite logo" />
-                </a>
-                <a href="https://react.dev" target="_blank">
-                    <img src={reactLogo} className="logo react" alt="React logo" />
-                </a>
-            </div>
-            <h1>Vite + React</h1>
-            <div className="card">
-                <button onClick={() => setCount((count) => count + 1)}>
-                    count is {count}
-                </button>
-                <p>
-                    Edit <code>src/App.tsx</code> and save to test HMR
-                </p>
-            </div>
-            <p className="read-the-docs">
-                Click on the Vite and React logos to learn more
-            </p>
-        </>
+        </main>
     )
 }
-
-export default App
