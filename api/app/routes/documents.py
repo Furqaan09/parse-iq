@@ -1,10 +1,11 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 from PyPDF2 import PdfReader
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
-from sqlmodel import Session
+from sqlalchemy import func
+from sqlmodel import Session, select
 from PIL import Image
 
 from app.core.database import get_session
@@ -125,3 +126,64 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
             "created_at": doc.created_at.isoformat() if hasattr(doc, "created_at") else None
         }
     )
+
+
+# -----------------------------------------------------
+# GET endpoint to list all documents based on filters
+# and pagination
+# -----------------------------------------------------
+@router.get("")
+def list_documents(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    media_type: Optional[MediaType] = Query(None),
+    q: Optional[str] = Query(None),
+    session: Session = Depends(get_session),
+):
+    # SQL quesries to fetch documents and count
+    stmt = select(Document)
+    count_stmt = select(func.count(Document.id))
+
+    # Apply media type filter if provided
+    if media_type:
+        stmt = stmt.where(Document.media_type == media_type)
+        count_stmt = count_stmt.where(Document.media_type == media_type)
+
+    # Apply search filter if provided (Matches the doc title)
+    if q:
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(Document.title.ilike(like))
+        count_stmt = count_stmt.where(Document.title.ilike(like))
+
+    # Execute count query to get total count for pagination
+    total = session.exec(count_stmt).one()
+
+    # Apply pagination (To keep track of how many items to skip on next page)
+    offset = (page - 1) * page_size
+    docs = (
+        session.exec(
+            stmt.order_by(Document.id.desc()).offset(offset).limit(page_size)
+        ).all()
+    )
+
+    # Prepare response items
+    items = [
+        {
+            "id": d.id,
+            "title": d.title,
+            "media_type": d.media_type,
+            "storage_path": d.storage_path,
+            "pages": d.pages,
+            "created_at": d.created_at.isoformat() if hasattr(d, "created_at") else None
+        }
+        for d in docs
+    ]
+    
+    # Return paginated response
+    return {
+        "items": items,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "has_next": (offset + len(items)) < total
+    }
