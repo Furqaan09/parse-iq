@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Literal, Optional
 from PyPDF2 import PdfReader
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import Path as FastAPIPath
 from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlmodel import Session, select
@@ -34,7 +35,7 @@ def infer_media_type(filename: str, content_type: str) -> MediaType:
             return "audio"
         if content_type.startswith("text/"):
             return "text"
-    
+
     # Fallback to filename extension
     lower_name = filename.lower()
     if lower_name.endswith(".pdf"):
@@ -186,4 +187,48 @@ def list_documents(
         "page_size": page_size,
         "total": total,
         "has_next": (offset + len(items)) < total
+    }
+
+
+# ----------------------------------------------
+# Function to convert storage path to file URL
+# ----------------------------------------------
+def storage_path_to_file_url(storage_path: str) -> str | None:
+    try:
+        # Get relative path from storage root (e.g. 2025/09/file.pdf)
+        rel = Path(storage_path).resolve().relative_to(
+            Path(__file__).resolve().parents[2] / "storage" / "uploads"
+        )
+        return f"/files/{rel.as_posix()}"
+    except Exception:
+        return None
+
+
+# -----------------------------------------------
+# GET endpoint to fetch a single document by ID
+# -----------------------------------------------
+@router.get("/{doc_id}")
+def get_document(
+    doc_id: int = FastAPIPath(..., ge=1),
+    session: Session = Depends(get_session)
+):
+    # Fetch document from DB
+    doc = session.get(Document, doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Convert storage path to file URL
+    file_url = None
+    if doc.storage_path:
+        abs_path = Path(__file__).resolve().parents[2] / doc.storage_path
+        if abs_path.exists():
+            file_url = storage_path_to_file_url(str(abs_path))
+
+    return {
+        "id": doc.id,
+        "title": doc.title,
+        "media_type": doc.media_type,
+        "pages": doc.pages,
+        "storage_path": doc.storage_path,
+        "file_url": file_url
     }
