@@ -1,8 +1,7 @@
 from pathlib import Path
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlmodel import Session, select
 
 from app.routes.documents import router as documents_router
 

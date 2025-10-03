@@ -1,4 +1,5 @@
 import UploadBox from "./components/UploadBox"
+import DocumentList from "./components/DocumentList"
 import { useEffect, useState } from "react"
 
 export default function App() {
@@ -27,6 +28,7 @@ export default function App() {
                 </section>
 
                 <UploadBox />
+                <DocumentList />
             </div>
         </main>
     )
