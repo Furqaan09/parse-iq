@@ -2,13 +2,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 from PyPDF2 import PdfReader
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from fastapi import Path as FastAPIPath
 from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlmodel import Session, select
 from PIL import Image
 
+from app.services.chunking import run_chunking
 from app.core.database import get_session
 from app.models import Document
 
@@ -129,10 +130,9 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
     )
 
 
-# -----------------------------------------------------
-# GET endpoint to list all documents based on filters
-# and pagination
-# -----------------------------------------------------
+# --------------------------------------------------------------------
+# GET endpoint to list all documents based on filters and pagination
+# --------------------------------------------------------------------
 @router.get("")
 def list_documents(
     page: int = Query(1, ge=1),
@@ -231,4 +231,40 @@ def get_document(
         "pages": doc.pages,
         "storage_path": doc.storage_path,
         "file_url": file_url
+    }
+
+
+# ---------------------------------------------
+# POST endpoint to run chunking on a document
+# ---------------------------------------------
+@router.post("/{doc_id}/chunk")
+def chunk_document(
+    doc_id: int,
+    rebuild: bool = Body(False, embed=True),
+    session: Session = Depends(get_session)
+):
+    doc = session.get(Document, doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    try:
+        chunks = run_chunking(session, doc_id, rebuild=rebuild)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chunking failed: {e}")
+    
+    return {
+        "document_id": doc.id,
+        "created": len(chunks),
+        "media_type": doc.media_type,
+        "chunks": [
+            {
+                "id": ch.id,
+                "modality": ch.modality,
+                "page": ch.page,
+                "has_text": bool(ch.content_text and ch.content_text.strip()),
+            }
+        for ch in chunks
+        ]
     }
