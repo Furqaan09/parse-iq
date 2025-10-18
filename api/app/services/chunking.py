@@ -28,11 +28,13 @@ def _safe_trim(text: Optional[str]) -> Optional[str]:
 
 def chunk_pdf(session: Session, doc: Document) -> list[Chunk]:
     """Create one text chunk per PDF page."""
+    # Load the PDF file
     path = _abs_storage_path(doc)
     if not path.exists():
         raise FileNotFoundError(f"File does not exist: {path}")
-    
     reader = PdfReader(str(path))
+
+    # Create chunks for each page
     created: list[Chunk] = []
     for i, page in enumerate(reader.pages, start=1):
         try:
@@ -41,6 +43,7 @@ def chunk_pdf(session: Session, doc: Document) -> list[Chunk]:
             txt = ""
         text = _safe_trim(txt)
         
+        # Build and save chunk
         ch = Chunk(
             document_id=doc.id,
             modality="text",
@@ -52,6 +55,7 @@ def chunk_pdf(session: Session, doc: Document) -> list[Chunk]:
         session.add(ch)
         created.append(ch)
 
+    # Commit all chunks at once to the database
     session.commit()
     for ch in created:
         session.refresh(ch)
@@ -73,6 +77,7 @@ def _try_ocr_image(path: Path) -> Optional[str]:
     
 def chunk_image(session: Session, doc: Document) -> list[Chunk]:
     """Create one chunk for the image, with optional OCR text."""
+    # Load the image file
     path = _abs_storage_path(doc)
     if not path.exists():
         raise FileNotFoundError(f"File does not exist: {path}")
@@ -82,8 +87,10 @@ def chunk_image(session: Session, doc: Document) -> list[Chunk]:
     except Exception as e:
         raise RuntimeError(f"Invalid image for chunking: {e}")
     
+    # Perform OCR to extract text
     text = _try_ocr_image(path)
     
+    # Build and save chunk, commit to the database
     ch = Chunk(
         document_id=doc.id,
         modality="image",
@@ -108,7 +115,7 @@ def chunk_text(session: Session, doc: Document) -> list[Chunk]:
         document_id=doc.id,
         modality="text",
         page=1,
-        content_text=None, # implemented later
+        content_text=None,
         bbox=None,
         embedding_key=None
     )
@@ -128,6 +135,7 @@ def delete_existing_chunks(session: Session, doc: Document) -> int:
         select(Chunk).where(Chunk.document_id == doc.id)
     ).all()
 
+    # Delete all chunks
     for ch in chunks:
         session.delete(ch)
     session.commit()
@@ -140,14 +148,17 @@ def delete_existing_chunks(session: Session, doc: Document) -> int:
 # -------------------------------------------------------
 def run_chunking(session: Session, doc_id: int, rebuild: bool = False) -> list[Chunk]:
     """Run chunking for a document by ID. Optionally rebuild existing chunks."""
+    # Fetch document from DB
     doc = session.get(Document, doc_id)
     if not doc:
         raise ValueError(f"Document not found with id: {doc_id}")
 
+    # Delete existing chunks if rebuild is requested
     if rebuild:
         deleted_count = delete_existing_chunks(session, doc)
         print(f"Deleted {deleted_count} existing chunks for document id {doc.id}")
 
+    # Run chunking based on media type
     if doc.media_type == "pdf":
         return chunk_pdf(session, doc)
     elif doc.media_type == "image":
