@@ -1,3 +1,4 @@
+import numpy as np
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
@@ -9,9 +10,13 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 from PIL import Image
 
+from app.services.faiss_index import (
+    load_or_new, add as faiss_add, save as faiss_save, rebuild as faiss_rebuild, DIMS
+)
+from app.services.embeddings import embed_images, embed_texts
 from app.services.chunking import run_chunking
 from app.core.database import get_session
-from app.models import Document
+from app.models import Chunk, Document
 
 # API router for document-related endpoints
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -47,7 +52,7 @@ def infer_media_type(filename: str, content_type: str) -> MediaType:
         return "audio"
     if any(lower_name.endswith(ext) for ext in [".txt", ".md", ".csv"]):
         return "text"
-    
+
     # Default to text if unsure
     return "text"
 
@@ -61,7 +66,7 @@ def title_from_name(name: str) -> str:
 
 
 # ------------------------------------
-# Post endpoint to upload a document
+# POST endpoint to upload a document
 # ------------------------------------
 @router.post("/upload")
 async def upload_document(file: UploadFile = File(...), session: Session = Depends(get_session)):
@@ -243,17 +248,19 @@ def chunk_document(
     rebuild: bool = Body(False, embed=True),
     session: Session = Depends(get_session)
 ):
+    # Fetch document from DB
     doc = session.get(Document, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    
+
+    # Run chunking
     try:
         chunks = run_chunking(session, doc_id, rebuild=rebuild)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chunking failed: {e}")
-    
+
     return {
         "document_id": doc.id,
         "created": len(chunks),
@@ -268,3 +275,126 @@ def chunk_document(
         for ch in chunks
         ]
     }
+
+
+# ----------------------------------------
+# POST endpoint to embed document chunks
+# ----------------------------------------
+@router.post("/{doc_id}/embed")
+def embed_document_chunks(
+    doc_id: int,
+    session: Session = Depends(get_session)
+):
+    # Fetch document from DB
+    doc = session.get(Document, doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Fetch all chunks for the document
+    chunks: list[Chunk] = session.exec(
+        select(Chunk).where(Chunk.document_id == doc_id)
+    ).all()
+
+    if not chunks:
+        return {"document_id": doc.id, "embedded": 0, "details": []}
+
+    # Filter chunks that need embedding
+    text_chunks = [c for c in chunks if c.modality == "text" and (c.content_text or "").strip() and not c.embedding_key]
+    image_chunks = [c for c in chunks if c.modality == "image" and not c.embedding_key]
+
+    details = []
+
+    # Embed TEXT chunks
+    if text_chunks:
+        texts = [c.content_text or "" for c in text_chunks]
+        vecs = embed_texts(texts)
+        ids = np.array([c.id for c in text_chunks], dtype=np.int64)
+        index = load_or_new("text")
+        faiss_add(index, vecs, ids)
+        faiss_save(index, "text")
+
+        for c in text_chunks:
+            c.embedding_key = "text"
+        session.add_all(text_chunks)
+        session.commit()
+        details.append({"modality": "text", "count": len(text_chunks)})
+
+    # Embed IMAGE chunks
+    if image_chunks:
+        paths = []
+        for c in image_chunks:
+            abs_path = Path(__file__).resolve().parents[2] / doc.storage_path
+            paths.append(abs_path)
+
+        vecs = embed_images(paths)
+        ids = np.array([c.id for c in image_chunks], dtype=np.int64)
+        index = load_or_new("image")
+        faiss_add(index, vecs, ids)
+        faiss_save(index, "image")
+
+        for c in image_chunks:
+            c.embedding_key = "image"
+        session.add_all(image_chunks)
+        session.commit()
+        details.append({"modality": "image", "count": len(image_chunks)})
+
+    return {"document_id": doc.id, "embedded": sum(d["count"] for d in details) if details else 0, "details": details}
+
+
+# --------------------------------
+# POST endpoint to rebuild index
+# --------------------------------
+@router.post("/embed/rebuild")
+def rebuild_index(
+    modality: Literal["text", "image"] = Body(..., embed=True),
+    session: Session = Depends(get_session)
+):
+    # TEXT
+    if modality == "text":
+        all_chunks = session.exec(select(Chunk).where(Chunk.modality == "text")).all()
+        texts = [c.content_text or "" for c in all_chunks if (c.content_text or "").strip()]
+        ids = np.array([c.id for c in all_chunks if (c.content_text or "").strip()], dtype=np.int64)
+        if ids.size == 0:
+            # write empty index
+            index = faiss_rebuild("text", np.zeros((0, DIMS["text"]), dtype="float32"), np.zeros((0,), dtype=np.int64))
+            faiss_save(index, "text")
+            return {"modality": "text", "rebuilt": 0}
+        vecs = embed_texts(texts)
+        index = faiss_rebuild("text", vecs, np.array(ids, dtype=np.int64))
+        faiss_save(index, "text")
+        # mark embedding_key
+        for c in all_chunks:
+            if c.id in ids:
+                c.embedding_key = "text"
+        session.add_all(all_chunks)
+        session.commit()
+        return {"modality": "text", "rebuilt": len(ids)}
+
+    # IMAGE
+    all_chunks = session.exec(select(Chunk).where(Chunk.modality == "image")).all()
+    # map chunk -> its document path
+    docs = {d.id: d for d in session.exec(select(Document)).all()}  # cache
+    paths = []
+    ids = []
+    for c in all_chunks:
+        d = docs.get(c.document_id)
+        if not d:
+            continue
+        abs_path = Path(__file__).resolve().parents[2] / d.storage_path
+        if abs_path.exists():
+            paths.append(abs_path)
+            ids.append(c.id)
+    if not ids:
+        index = faiss_rebuild("image", np.zeros((0, DIMS["image"]), dtype="float32"), np.zeros((0,), dtype=np.int64))
+        faiss_save(index, "image")
+        return {"modality": "image", "rebuilt": 0}
+
+    vecs = embed_images(paths)
+    index = faiss_rebuild("image", vecs, np.array(ids, dtype=np.int64))
+    faiss_save(index, "image")
+    for c in all_chunks:
+        if c.id in ids:
+            c.embedding_key = "image"
+    session.add_all(all_chunks)
+    session.commit()
+    return {"modality": "image", "rebuilt": len(ids)}

@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.routes.documents import router as documents_router
+from app.routes.search import router as search_router
 
 # Instance of FastAPI
 app = FastAPI(title="ParseIQ API", version="0.1.0")
@@ -29,6 +30,12 @@ def get_status():
 # Include the documents router
 # ------------------------------
 app.include_router(documents_router)
+
+
+# ---------------------------
+# Include the search router
+# ---------------------------
+app.include_router(search_router)
 
 
 # ---------------------------------
