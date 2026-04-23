@@ -5,18 +5,23 @@ from fastapi.staticfiles import StaticFiles
 
 from app.routes.documents import router as documents_router
 from app.routes.search import router as search_router
+from app.routes.chat import router as chat_router
 
-# Instance of FastAPI
+
+# -----------------------
+# FastAPI configuration
+# -----------------------
 app = FastAPI(title="ParseIQ API", version="0.1.0")
 
 # CORS configuration: Allow browser frontend to call API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"], # Vite default port
+    allow_origins=["http://localhost:5173"],  # Vite default port
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # ----------------------------------------------
 # Sample endpoint to verify the API is working
@@ -26,16 +31,12 @@ def get_status():
     return {"status": "API is running"}
 
 
-# ------------------------------
-# Include the documents router
-# ------------------------------
+# ----------------------
+# Include all routers
+# ----------------------
 app.include_router(documents_router)
-
-
-# ---------------------------
-# Include the search router
-# ---------------------------
 app.include_router(search_router)
+app.include_router(chat_router)
 
 
 # ---------------------------------
