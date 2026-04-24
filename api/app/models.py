@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, UTC
 from enum import Enum
 from typing import Literal, Optional
 from sqlmodel import Field, Relationship, SQLModel
@@ -10,12 +10,10 @@ class SourceType(str, Enum):
     upload = "upload"
     url = "url"
     email = "email"
-    audio = "audio"
 
 class MediaType(str, Enum):
     pdf = "pdf"
     image = "image"
-    audio = "audio"
     text = "text"
 
 class Modality(str, Enum):
@@ -43,8 +41,8 @@ class TaskStatus(str, Enum):
 # Base model with timestamp fields
 # ----------------------------------
 class Timestamped(SQLModel):
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime = Field(default_factory=datetime.now(UTC), nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.now(UTC), nullable=False)
 
 # ----------------
 # Document table
@@ -71,6 +69,7 @@ class Chunk(SQLModel, table=True):
     __tablename__ = "chunks"
     id: int | None = Field(default=None, primary_key=True)
     document_id: int = Field(foreign_key="documents.id", index=True)
+    chunk_index: int | None = Field(default=None, index=True)
     modality: Modality = Field(default=Modality.text, index=True) # Is it text or image chunk
     page: int | None = Field(default=None, index=True)  # Page number if applicable
     content_text: str | None = Field(default=None) # Text content if applicable
