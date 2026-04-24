@@ -4,7 +4,7 @@
 export type UploadResponse = {
     id: number
     title: string
-    media_type: "pdf" | "image" | "text" | "audio"
+    media_type: "pdf" | "image" | "text"
     pages: number | null
     storage_path: string
     created_at: string
@@ -42,7 +42,7 @@ export async function uploadDocument(file: File): Promise<UploadResponse> {
 export type DocumentItem = {
     id: number
     title: string
-    media_type: "pdf" | "image" | "text" | "audio"
+    media_type: "pdf" | "image" | "text"
     pages: number | null
     storage_path: string
 }
@@ -88,7 +88,7 @@ export async function listDocuments(params?: {
 export type GetDocumentResponse = {
     id: number
     title: string
-    media_type: "pdf" | "image" | "text" | "audio"
+    media_type: "pdf" | "image" | "text"
     pages: number | null
     storage_path: string
     file_url: string | null
@@ -102,5 +102,54 @@ export async function getDocument(id: number): Promise<GetDocumentResponse> {
     if (!res.ok) {
         throw new Error(`Failed to get document ${id}: ${res.status}`)
     }
+    return res.json()
+}
+
+
+// -------------------------------------------------------
+// Interface for a single citation in the chat response
+// -------------------------------------------------------
+export type ChatCitation = {
+    n: number
+    document_id: number
+    title: string
+    page: number | null
+    file_url: string | null
+    snippet: string
+}
+
+// --------------------------------------------------------
+// Interface for the response from the chat ask endpoint
+// --------------------------------------------------------
+export type ChatAskResponse = {
+    answer: string
+    citations: ChatCitation[]
+}
+
+// -----------------------------------------------------------------------
+// Function to send a chat message to the backend and receive an answer
+// -----------------------------------------------------------------------
+export async function askChat(params: {
+    message: string
+    top_k?: number
+    document_ids?: number[]
+}): Promise<ChatAskResponse> {
+    const res = await fetch("/api/chat/ask", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            message: params.message,
+            top_k: params.top_k ?? 6,
+            document_ids: params.document_ids ?? null,
+        }),
+    })
+
+    if (!res.ok) {
+        const msg = await res.text().catch(() => "")
+        throw new Error(msg || `Chat request failed with ${res.status}`)
+    }
+
     return res.json()
 }

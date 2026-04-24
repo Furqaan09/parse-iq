@@ -1,5 +1,6 @@
 import UploadBox from "./components/UploadBox"
 import DocumentList from "./components/DocumentList"
+import ChatPanel from "./components/ChatPanel"
 import { useEffect, useState } from "react"
 
 export default function App() {
@@ -29,6 +30,7 @@ export default function App() {
 
                 <UploadBox />
                 <DocumentList />
+                <ChatPanel />
             </div>
         </main>
     )
