@@ -1,4 +1,5 @@
 import pytesseract
+import re
 from pathlib import Path
 from typing import Optional
 from PIL import Image
@@ -7,9 +8,10 @@ from sqlmodel import Session, select
 
 from app.models import Chunk, Document
 
-# ------------------------------------------------
-# Chunking strategy for PDFs: one chunk per page
-# ------------------------------------------------
+
+# ------------------------------------------------------
+# Chunking strategy for PDFs: multiple chunks per page
+# ------------------------------------------------------
 def _abs_storage_path(doc: Document) -> Path:
     """
     Get the absolute storage path for a document.
@@ -19,6 +21,7 @@ def _abs_storage_path(doc: Document) -> Path:
     here = Path(__file__).resolve().parents[2]  # points to api/
     return (here / doc.storage_path).resolve()
 
+
 def _safe_trim(text: Optional[str]) -> Optional[str]:
     """Trim text and return None if empty or None."""
     if text is None:
@@ -26,34 +29,110 @@ def _safe_trim(text: Optional[str]) -> Optional[str]:
     t = text.strip()
     return t if t else None
 
+
+def _clean_text(text: str) -> str:
+    """Light cleanup for extracted/OCR text."""
+    text = text.replace("\r", "\n")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def split_text_into_chunks(
+    text: str, target_size: int = 900, overlap: int = 150
+) -> list[str]:
+    """
+    Split text into paragraph-aware overlapping chunks.
+    """
+    text = _clean_text(text)
+    if not text:
+        return []
+
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    chunks = []
+    current = ""
+
+    for para in paragraphs:
+        # If adding this paragraph stays within target, append it
+        if len(current) + len(para) + 2 <= target_size:
+            current = f"{current}\n\n{para}".strip()
+        else:
+            # Save current chunk if it exists
+            if current:
+                chunks.append(current)
+
+            # If paragraph itself is too large, split it further
+            if len(para) > target_size:
+                start = 0
+                while start < len(para):
+                    end = start + target_size
+                    piece = para[start:end].strip()
+                    if piece:
+                        chunks.append(piece)
+                    start += target_size - overlap
+                current = ""
+            else:
+                # Start new chunk with this paragraph
+                current = para
+
+    if current:
+        chunks.append(current)
+
+    # Add overlap between adjacent chunks
+    overlapped = []
+    for i, chunk in enumerate(chunks):
+        if i == 0:
+            overlapped.append(chunk)
+        else:
+            prev = chunks[i - 1]
+            prefix = prev[-overlap:].strip()
+            merged = f"{prefix}\n\n{chunk}".strip()
+            overlapped.append(merged)
+
+    return overlapped
+
+
 def chunk_pdf(session: Session, doc: Document) -> list[Chunk]:
-    """Create one text chunk per PDF page."""
+    """Create multiple text chunks per PDF page."""
     # Load the PDF file
     path = _abs_storage_path(doc)
     if not path.exists():
         raise FileNotFoundError(f"File does not exist: {path}")
-    reader = PdfReader(str(path))
 
-    # Create chunks for each page
+    reader = PdfReader(str(path))
     created: list[Chunk] = []
-    for i, page in enumerate(reader.pages, start=1):
+    running_chunk_index = 0
+
+    # Create multiple chunks for each page
+    for page_num, page in enumerate(reader.pages, start=1):
         try:
-            txt = page.extract_text() or ""
+            raw_text = page.extract_text() or ""
         except Exception:
-            txt = ""
-        text = _safe_trim(txt)
-        
-        # Build and save chunk
-        ch = Chunk(
-            document_id=doc.id,
-            modality="text",
-            page=i,
-            content_text=text,
-            bbox=None,
-            embedding_key=None
-        )
-        session.add(ch)
-        created.append(ch)
+            raw_text = ""
+
+        page_text = _safe_trim(raw_text)
+        if not page_text:
+            continue
+        subchunks = split_text_into_chunks(page_text, target_size=900, overlap=150)
+
+        for subchunk in subchunks:
+            enriched_text = (
+                f"Document: {doc.title}\n" f"Page: {page_num}\n\n" f"{subchunk}"
+            )
+
+            ch = Chunk(
+                document_id=doc.id,
+                chunk_index=running_chunk_index,
+                modality="text",
+                page=page_num,
+                content_text=enriched_text,
+                bbox=None,
+                embedding_key=None,
+            )
+
+            session.add(ch)
+            created.append(ch)
+            running_chunk_index += 1
 
     # Commit all chunks at once to the database
     session.commit()
@@ -63,9 +142,10 @@ def chunk_pdf(session: Session, doc: Document) -> list[Chunk]:
     return created
 
 
-# ---------------------------------------------------
-# Chunking strategy for Images: one chunk per image
-# ---------------------------------------------------
+# ------------------------------------------------------------
+# Chunking strategy for Images: one chunk per image for CLIP
+# + multiple OCR text chunks for text retrieval
+# ------------------------------------------------------------
 def _try_ocr_image(path: Path) -> Optional[str]:
     """Try to OCR the image and return extracted text or None."""
     try:
@@ -74,36 +154,70 @@ def _try_ocr_image(path: Path) -> Optional[str]:
         return _safe_trim(text)
     except Exception:
         return None
-    
+
+
 def chunk_image(session: Session, doc: Document) -> list[Chunk]:
-    """Create one chunk for the image, with optional OCR text."""
+    """
+    Create one chunk for the image for CLIP
+    and multiple OCR text chunks for text retrieval.
+    """
     # Load the image file
     path = _abs_storage_path(doc)
     if not path.exists():
         raise FileNotFoundError(f"File does not exist: {path}")
-    
+
     try:
         Image.open(path).verify()
     except Exception as e:
         raise RuntimeError(f"Invalid image for chunking: {e}")
-    
-    # Perform OCR to extract text
-    text = _try_ocr_image(path)
-    
-    # Build and save chunk, commit to the database
-    ch = Chunk(
+
+    created: list[Chunk] = []
+    running_chunk_index = 0
+
+    # Image chunk for visual embeddings
+    image_chunk = Chunk(
         document_id=doc.id,
         modality="image",
         page=1,
-        content_text=text,
+        chunk_index=running_chunk_index,
+        content_text=None,
         bbox=None,
-        embedding_key=None
+        embedding_key=None,
     )
-    session.add(ch)
+    session.add(image_chunk)
+    created.append(image_chunk)
+    running_chunk_index += 1
+
+    # OCR text -> multiple text chunks
+    ocr_text = _try_ocr_image(path)
+    if ocr_text:
+        subchunks = split_text_into_chunks(
+            ocr_text,
+            target_size=900,
+            overlap=150,
+        )
+
+        for subchunk in subchunks:
+            enriched_text = f"Document: {doc.title}\n" f"Page: 1\n\n" f"{subchunk}"
+
+            text_chunk = Chunk(
+                document_id=doc.id,
+                modality="text",
+                page=1,
+                chunk_index=running_chunk_index,
+                content_text=enriched_text,
+                bbox=None,
+                embedding_key=None,
+            )
+            session.add(text_chunk)
+            created.append(text_chunk)
+            running_chunk_index += 1
+
     session.commit()
-    session.refresh(ch)
-    
-    return [ch]
+    for ch in created:
+        session.refresh(ch)
+
+    return created
 
 
 # ----------------------------------
@@ -111,19 +225,39 @@ def chunk_image(session: Session, doc: Document) -> list[Chunk]:
 # ----------------------------------
 def chunk_text(session: Session, doc: Document) -> list[Chunk]:
     """Placeholder function for text file chunking."""
-    ch = Chunk(
-        document_id=doc.id,
-        modality="text",
-        page=1,
-        content_text=None,
-        bbox=None,
-        embedding_key=None
-    )
-    session.add(ch)
-    session.commit()
-    session.refresh(ch)
+    path = _abs_storage_path(doc)
+    if not path.exists():
+        raise FileNotFoundError(f"File does not exist: {path}")
 
-    return [ch]
+    raw_text = path.read_text(encoding="utf-8", errors="ignore")
+    raw_text = _safe_trim(raw_text)
+    if not raw_text:
+        return []
+
+    # Create chunks from the text content
+    created: list[Chunk] = []
+    subchunks = split_text_into_chunks(raw_text, target_size=900, overlap=150)
+
+    for idx, subchunk in enumerate(subchunks):
+        enriched_text = f"Document: {doc.title}\n" f"Page: 1\n\n" f"{subchunk}"
+
+        ch = Chunk(
+            document_id=doc.id,
+            modality="text",
+            page=1,
+            chunk_index=idx,
+            content_text=enriched_text,
+            bbox=None,
+            embedding_key=None,
+        )
+        session.add(ch)
+        created.append(ch)
+
+    session.commit()
+    for ch in created:
+        session.refresh(ch)
+
+    return created
 
 
 # ---------------------------------------------------
@@ -131,9 +265,7 @@ def chunk_text(session: Session, doc: Document) -> list[Chunk]:
 # ---------------------------------------------------
 def delete_existing_chunks(session: Session, doc: Document) -> int:
     """Delete all existing chunks for a document. Returns number deleted."""
-    chunks = session.exec(
-        select(Chunk).where(Chunk.document_id == doc.id)
-    ).all()
+    chunks = session.exec(select(Chunk).where(Chunk.document_id == doc.id)).all()
 
     # Delete all chunks
     for ch in chunks:

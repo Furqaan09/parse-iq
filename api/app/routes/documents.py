@@ -25,7 +25,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 STORAGE_ROOT = Path(__file__).resolve().parents[2] / "storage" / "uploads"
 
 # Types for media
-MediaType = Literal["pdf", "image", "audio", "text"]
+MediaType = Literal["pdf", "image", "text"]
 
 # -------------------------------------------------------------
 # Function to detect media type from filename or content type
@@ -37,8 +37,6 @@ def infer_media_type(filename: str, content_type: str) -> MediaType:
             return "pdf"
         if content_type.startswith("image/"):
             return "image"
-        if content_type.startswith("audio/"):
-            return "audio"
         if content_type.startswith("text/"):
             return "text"
 
@@ -48,8 +46,6 @@ def infer_media_type(filename: str, content_type: str) -> MediaType:
         return "pdf"
     if any(lower_name.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"]):
         return "image"
-    if any(lower_name.endswith(ext) for ext in [".mp3", ".wav", ".m4a", ".ogg", ".aac"]):
-        return "audio"
     if any(lower_name.endswith(ext) for ext in [".txt", ".md", ".csv"]):
         return "text"
 
@@ -63,6 +59,71 @@ def infer_media_type(filename: str, content_type: str) -> MediaType:
 def title_from_name(name: str) -> str:
     stem = Path(name).stem
     return " ".join(stem.replace("_", " ").split()).strip() or "Untitled"
+
+
+def process_document_after_upload(doc: Document, session: Session) -> dict:
+    """
+    Run chunking and embeddings for a document immediately after upload.
+    Returns a summary of processing.
+    """
+    # Chunk the document
+    chunks = run_chunking(session, doc.id, rebuild=True)
+
+    # Fetch all chunks for embedding
+    all_chunks: list[Chunk] = session.exec(select(Chunk).where(Chunk.document_id == doc.id)).all()
+
+    text_chunks = [
+        c for c in all_chunks
+        if c.modality == "text" and (c.content_text or "").strip() and not c.embedding_key
+    ]
+    image_chunks = [
+        c for c in all_chunks
+        if c.modality == "image" and not c.embedding_key
+    ]
+
+    details = []
+
+    # Embed text chunks
+    if text_chunks:
+        texts = [c.content_text or "" for c in text_chunks]
+        vecs = embed_texts(texts)
+        ids = np.array([c.id for c in text_chunks], dtype=np.int64)
+
+        index = load_or_new("text")
+        faiss_add(index, vecs, ids)
+        faiss_save(index, "text")
+
+        for c in text_chunks:
+            c.embedding_key = "text"
+        session.add_all(text_chunks)
+        session.commit()
+
+        details.append({"modality": "text", "count": len(text_chunks)})
+
+    # Embed image chunks
+    if image_chunks:
+        abs_path = Path(__file__).resolve().parents[2] / doc.storage_path
+        paths = [abs_path for _ in image_chunks]
+
+        vecs = embed_images(paths)
+        ids = np.array([c.id for c in image_chunks], dtype=np.int64)
+
+        index = load_or_new("image")
+        faiss_add(index, vecs, ids)
+        faiss_save(index, "image")
+
+        for c in image_chunks:
+            c.embedding_key = "image"
+        session.add_all(image_chunks)
+        session.commit()
+
+        details.append({"modality": "image", "count": len(image_chunks)})
+
+    return {
+        "chunks_created": len(chunks),
+        "embedded": sum(d["count"] for d in details) if details else 0,
+        "embedding_details": details,
+    }
 
 
 # ------------------------------------
@@ -122,6 +183,23 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
     session.commit()
     session.refresh(doc)
 
+    processing = {
+        "chunks_created": 0,
+        "embedded": 0,
+        "embedding_details": [],
+    }
+
+    try:
+        processing = process_document_after_upload(doc, session)
+    except Exception as e:
+        # Do not fail the upload itself if processing fails
+        processing = {
+            "chunks_created": 0,
+            "embedded": 0,
+            "embedding_details": [],
+            "processing_error": str(e),
+        }
+
     # Return a JSON response
     return JSONResponse(
         {
@@ -130,7 +208,8 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
             "media_type": doc.media_type,
             "storage_path": doc.storage_path,
             "pages": doc.pages,
-            "created_at": doc.created_at.isoformat() if hasattr(doc, "created_at") else None
+            "created_at": doc.created_at.isoformat() if hasattr(doc, "created_at") else None,
+            "processing": processing,
         }
     )
 

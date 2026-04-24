@@ -6,9 +6,9 @@ from sqlmodel import Session, select
 from app.models import Chunk, Document
 from app.services.embeddings import embed_texts
 from app.services.faiss_index import load_or_new, search as faiss_search
-from app.services.llm_provider import generate_with_local_llm
+from app.services.llm_provider import generate_with_llm
 
-MIN_SCORE = 0.20
+MIN_SCORE = 0.25
 
 # ------------------------------------------------
 # Function to convert storage path to files path
@@ -158,7 +158,6 @@ def rag_answer(
     # 3) craft grounded prompt
     system = (
         "You are ParseIQ's document assistant.\n"
-        "Answer ONLY what is asked in the QUESTION. Do NOT add more details.\n"
         "Answer ONLY from the provided CONTEXT.\n"
         "If the CONTEXT does not contain the answer, reply exactly:\n"
         "\"I could not find that information in the provided documents.\"\n"
@@ -173,6 +172,6 @@ def rag_answer(
     )
 
     # 4) generate with the local HF model
-    answer = generate_with_local_llm(system, user)
+    answer = generate_with_llm(system, user)
 
     return {"answer": answer, "citations": citations}
