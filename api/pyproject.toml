@@ -1,0 +1,25 @@
+[tool.black]
+line-length = 100
+target-version = ["py313"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+# Alembic-generated revision files are historical artifacts; don't reformat them.
+exclude = ["migration/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    "E501",
+    # str+Enum is intentional here for JSON/DB-friendly serialization; StrEnum is equivalent noise.
+    "UP042",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom (Depends/Body/Query/File in defaults) is
+# intentional, not a mutable-default bug.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Body", "fastapi.Query", "fastapi.File", "fastapi.Path"]

@@ -1,5 +1,6 @@
 import torch
 
+
 def get_torch_device() -> torch.device:
     """Get the appropriate torch device (GPU, MPS, or CPU)."""
     if torch.cuda.is_available():

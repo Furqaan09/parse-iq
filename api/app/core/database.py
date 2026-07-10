@@ -1,6 +1,7 @@
 import os
+
 from dotenv import load_dotenv
-from sqlmodel import SQLModel, create_engine, Session
+from sqlmodel import Session, create_engine
 
 # Load environment variables from .env file
 load_dotenv()
@@ -16,7 +17,8 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "parseiq_pw")
 DATABASE_URL = f"postgresql+psycopg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 # Create the database engine
-engine = create_engine(DATABASE_URL, echo=True)
+engine = create_engine(DATABASE_URL, echo=False)
+
 
 def get_session():
     with Session(engine) as session:

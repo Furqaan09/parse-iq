@@ -1,12 +1,21 @@
+import logging
 from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.routes.chat import router as chat_router
 from app.routes.documents import router as documents_router
 from app.routes.search import router as search_router
-from app.routes.chat import router as chat_router
 
+# ------------------------
+# Logging configuration
+# ------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 # -----------------------
 # FastAPI configuration

@@ -1,12 +1,15 @@
-import pytesseract
+import logging
 import re
 from pathlib import Path
-from typing import Optional
+
+import pytesseract
 from PIL import Image
 from PyPDF2 import PdfReader
 from sqlmodel import Session, select
 
 from app.models import Chunk, Document
+
+logger = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------
@@ -22,7 +25,7 @@ def _abs_storage_path(doc: Document) -> Path:
     return (here / doc.storage_path).resolve()
 
 
-def _safe_trim(text: Optional[str]) -> Optional[str]:
+def _safe_trim(text: str | None) -> str | None:
     """Trim text and return None if empty or None."""
     if text is None:
         return None
@@ -38,9 +41,7 @@ def _clean_text(text: str) -> str:
     return text.strip()
 
 
-def split_text_into_chunks(
-    text: str, target_size: int = 900, overlap: int = 150
-) -> list[str]:
+def split_text_into_chunks(text: str, target_size: int = 900, overlap: int = 150) -> list[str]:
     """
     Split text into paragraph-aware overlapping chunks.
     """
@@ -116,9 +117,7 @@ def chunk_pdf(session: Session, doc: Document) -> list[Chunk]:
         subchunks = split_text_into_chunks(page_text, target_size=900, overlap=150)
 
         for subchunk in subchunks:
-            enriched_text = (
-                f"Document: {doc.title}\n" f"Page: {page_num}\n\n" f"{subchunk}"
-            )
+            enriched_text = f"Document: {doc.title}\n" f"Page: {page_num}\n\n" f"{subchunk}"
 
             ch = Chunk(
                 document_id=doc.id,
@@ -146,7 +145,7 @@ def chunk_pdf(session: Session, doc: Document) -> list[Chunk]:
 # Chunking strategy for Images: one chunk per image for CLIP
 # + multiple OCR text chunks for text retrieval
 # ------------------------------------------------------------
-def _try_ocr_image(path: Path) -> Optional[str]:
+def _try_ocr_image(path: Path) -> str | None:
     """Try to OCR the image and return extracted text or None."""
     try:
         img = Image.open(path)
@@ -169,7 +168,7 @@ def chunk_image(session: Session, doc: Document) -> list[Chunk]:
     try:
         Image.open(path).verify()
     except Exception as e:
-        raise RuntimeError(f"Invalid image for chunking: {e}")
+        raise RuntimeError(f"Invalid image for chunking: {e}") from e
 
     created: list[Chunk] = []
     running_chunk_index = 0
@@ -288,7 +287,7 @@ def run_chunking(session: Session, doc_id: int, rebuild: bool = False) -> list[C
     # Delete existing chunks if rebuild is requested
     if rebuild:
         deleted_count = delete_existing_chunks(session, doc)
-        print(f"Deleted {deleted_count} existing chunks for document id {doc.id}")
+        logger.info("Deleted %d existing chunks for document id %s", deleted_count, doc.id)
 
     # Run chunking based on media type
     if doc.media_type == "pdf":

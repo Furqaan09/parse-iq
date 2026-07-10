@@ -1,14 +1,15 @@
+from pathlib import Path
+from typing import Literal
+
 import faiss
 import numpy as np
-from pathlib import Path
-from typing import Literal, Tuple
 
 IndexModality = Literal["text", "image"]
 
 # --------------------------------------------------------
 # Ensure the FAISS storage directory exists or create it
 # --------------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parents[2] # /api/
+BASE_DIR = Path(__file__).resolve().parents[2]  # /api/
 FAISS_DIR = BASE_DIR / "storage" / "faiss"
 FAISS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -17,11 +18,13 @@ FAISS_DIR.mkdir(parents=True, exist_ok=True)
 # ----------------------------------------------
 DIMS = {"text": 384, "image": 512}
 
+
 # ------------------------------------------
 # Find the index path for a given modality
 # ------------------------------------------
 def _index_path(modality: IndexModality) -> Path:
     return FAISS_DIR / f"{modality}.faiss"
+
 
 # ----------------------------------------------------
 # Function for loading or creating a new FAISS index
@@ -42,12 +45,14 @@ def load_or_new(modality: IndexModality) -> faiss.IndexIDMap2:
     base = faiss.IndexFlatIP(dim)
     return faiss.IndexIDMap2(base)
 
+
 # ------------------------------------------
 # Function to save the FAISS index to disk
 # ------------------------------------------
 def save(index: faiss.IndexIDMap2, modality: IndexModality) -> None:
     path = _index_path(modality)
     faiss.write_index(index, str(path))
+
 
 # ----------------------------------------------------
 # Function to add vectors and their IDs to the index
@@ -56,6 +61,7 @@ def add(index: faiss.IndexIDMap2, vectors: np.ndarray, ids: np.ndarray) -> None:
     if vectors.shape[0] == 0:
         return
     index.add_with_ids(vectors, ids)
+
 
 # --------------------------------------------
 # Function to rebuild the index from scratch
@@ -67,11 +73,14 @@ def rebuild(modality: IndexModality, vectors: np.ndarray, ids: np.ndarray) -> fa
     add(index, vectors, ids)
     return index
 
+
 # ----------------------------------------------------------------
 # Function to perform a search on the index using a query vector
 # ----------------------------------------------------------------
-def search(index: faiss.IndexIDMap2, query_vec: np.ndarray, top_k: int = 5) -> Tuple[np.ndarray, np.ndarray]:
+def search(
+    index: faiss.IndexIDMap2, query_vec: np.ndarray, top_k: int = 5
+) -> tuple[np.ndarray, np.ndarray]:
     if query_vec.ndim == 1:
         query_vec = query_vec[None, :]
-    D, I = index.search(query_vec.astype(np.float32), top_k)
-    return D[0], I[0]
+    scores, ids = index.search(query_vec.astype(np.float32), top_k)
+    return scores[0], ids[0]
