@@ -1,14 +1,17 @@
+from pathlib import Path
+
 from fastapi import APIRouter, Body, Depends
 from sqlmodel import Session, select
-from pathlib import Path
 
 from app.core.database import get_session
 from app.models import Chunk, Document
 from app.services.embeddings import embed_texts
-from app.services.faiss_index import load_or_new, search as faiss_search
+from app.services.faiss_index import load_or_new
+from app.services.faiss_index import search as faiss_search
 
 # API router for search-related endpoints
 router = APIRouter(prefix="/search", tags=["search"])
+
 
 # -------------------------------
 # POST endpoint for text search
@@ -39,7 +42,12 @@ def search_text(
 
     # Retrieve chunks and their associated documents
     chunks = session.exec(select(Chunk).where(Chunk.id.in_(id_list))).all()
-    docs = {d.id: d for d in session.exec(select(Document).where(Document.id.in_([c.document_id for c in chunks]))).all()}
+    docs = {
+        d.id: d
+        for d in session.exec(
+            select(Document).where(Document.id.in_([c.document_id for c in chunks]))
+        ).all()
+    }
 
     # Order results by FAISS order
     id_to_rank = {int(i): r for r, i in enumerate(ids) if i != -1}
@@ -47,7 +55,7 @@ def search_text(
 
     # Build response items
     items = []
-    for c, score in zip(chunks, scores[:len(chunks)]):
+    for c, score in zip(chunks, scores[: len(chunks)], strict=True):
         d = docs.get(c.document_id)
 
         # Build file_url from storage path
@@ -55,18 +63,22 @@ def search_text(
         if d and d.storage_path:
             abs_path = Path(__file__).resolve().parents[2] / d.storage_path
             if abs_path.exists():
-                rel = abs_path.relative_to(Path(__file__).resolve().parents[2] / "storage" / "uploads")
+                rel = abs_path.relative_to(
+                    Path(__file__).resolve().parents[2] / "storage" / "uploads"
+                )
                 file_url = f"/files/{rel.as_posix()}"
 
-        items.append({
-            "chunk_id": c.id,
-            "document_id": c.document_id,
-            "title": d.title if d else "",
-            "media_type": d.media_type if d else "",
-            "page": c.page,
-            "score": float(score),
-            "snippet": (c.content_text or "")[:200],
-            "file_url": file_url,
-        })
+        items.append(
+            {
+                "chunk_id": c.id,
+                "document_id": c.document_id,
+                "title": d.title if d else "",
+                "media_type": d.media_type if d else "",
+                "page": c.page,
+                "score": float(score),
+                "snippet": (c.content_text or "")[:200],
+                "file_url": file_url,
+            }
+        )
 
     return {"items": items, "total": len(items)}

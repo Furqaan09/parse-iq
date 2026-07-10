@@ -1,22 +1,25 @@
-import numpy as np
+import re
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, Optional
-from PyPDF2 import PdfReader
+from typing import Literal
+
+import numpy as np
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from fastapi import Path as FastAPIPath
 from fastapi.responses import JSONResponse
+from PIL import Image
+from PyPDF2 import PdfReader
 from sqlalchemy import func
 from sqlmodel import Session, select
-from PIL import Image
 
-from app.services.faiss_index import (
-    load_or_new, add as faiss_add, save as faiss_save, rebuild as faiss_rebuild, DIMS
-)
-from app.services.embeddings import embed_images, embed_texts
-from app.services.chunking import run_chunking
 from app.core.database import get_session
 from app.models import Chunk, Document
+from app.services.chunking import run_chunking
+from app.services.embeddings import embed_images, embed_texts
+from app.services.faiss_index import DIMS, load_or_new
+from app.services.faiss_index import add as faiss_add
+from app.services.faiss_index import rebuild as faiss_rebuild
+from app.services.faiss_index import save as faiss_save
 
 # API router for document-related endpoints
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -26,6 +29,7 @@ STORAGE_ROOT = Path(__file__).resolve().parents[2] / "storage" / "uploads"
 
 # Types for media
 MediaType = Literal["pdf", "image", "text"]
+
 
 # -------------------------------------------------------------
 # Function to detect media type from filename or content type
@@ -61,6 +65,24 @@ def title_from_name(name: str) -> str:
     return " ".join(stem.replace("_", " ").split()).strip() or "Untitled"
 
 
+_UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Strip directory components and unsafe characters from a user-supplied
+    filename before it is used to build a filesystem path (prevents path
+    traversal via names like '../../etc/passwd' or embedded separators).
+    """
+    # Path(...).name drops any leading directories and '..' segments,
+    # whether they came from POSIX ('/') or Windows ('\\') style input.
+    base = Path(filename.replace("\\", "/")).name
+    stem, suffix = Path(base).stem, Path(base).suffix
+    safe_stem = _UNSAFE_FILENAME_CHARS.sub("_", stem).strip("._") or "file"
+    safe_suffix = _UNSAFE_FILENAME_CHARS.sub("", suffix)
+    return f"{safe_stem}{safe_suffix}"
+
+
 def process_document_after_upload(doc: Document, session: Session) -> dict:
     """
     Run chunking and embeddings for a document immediately after upload.
@@ -73,13 +95,11 @@ def process_document_after_upload(doc: Document, session: Session) -> dict:
     all_chunks: list[Chunk] = session.exec(select(Chunk).where(Chunk.document_id == doc.id)).all()
 
     text_chunks = [
-        c for c in all_chunks
+        c
+        for c in all_chunks
         if c.modality == "text" and (c.content_text or "").strip() and not c.embedding_key
     ]
-    image_chunks = [
-        c for c in all_chunks
-        if c.modality == "image" and not c.embedding_key
-    ]
+    image_chunks = [c for c in all_chunks if c.modality == "image" and not c.embedding_key]
 
     details = []
 
@@ -135,21 +155,22 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
     if file.size and file.size > 50 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File too large (>50MB).")
 
-    #Infer media type
+    # Infer media type
     media_type = infer_media_type(file.filename, file.content_type)
     title = title_from_name(file.filename)
+    safe_filename = sanitize_filename(file.filename)
 
     # Build a storage path
     today = datetime.utcnow()
     dir_path = STORAGE_ROOT / f"{today:%Y}" / f"{today:%m}"
     dir_path.mkdir(parents=True, exist_ok=True)
 
-    dest_path = dir_path / file.filename
+    dest_path = dir_path / safe_filename
 
     # Handle name collisions by adding a counter suffix
     counter = 1
     while dest_path.exists():
-        dest_path = dir_path / f"{Path(file.filename).stem}_{counter}{Path(file.filename).suffix}"
+        dest_path = dir_path / f"{Path(safe_filename).stem}_{counter}{Path(safe_filename).suffix}"
         counter += 1
 
     # Save the file on disk
@@ -167,8 +188,8 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
             Image.open(dest_path).verify()
     except Exception as e:
         dest_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail=f"File parsing failed: {e}")
-    
+        raise HTTPException(status_code=400, detail=f"File parsing failed: {e}") from e
+
     # Insert document record in DB
     doc = Document(
         user_id=None,
@@ -177,7 +198,7 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
         media_type=media_type,
         storage_path=str(dest_path.relative_to(Path(__file__).resolve().parents[2])),
         pages=pages,
-        meta_json=None
+        meta_json=None,
     )
     session.add(doc)
     session.commit()
@@ -221,8 +242,8 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
 def list_documents(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    media_type: Optional[MediaType] = Query(None),
-    q: Optional[str] = Query(None),
+    media_type: MediaType | None = Query(None),
+    q: str | None = Query(None),
     session: Session = Depends(get_session),
 ):
     # SQL quesries to fetch documents and count
@@ -245,11 +266,7 @@ def list_documents(
 
     # Apply pagination (To keep track of how many items to skip on next page)
     offset = (page - 1) * page_size
-    docs = (
-        session.exec(
-            stmt.order_by(Document.id.desc()).offset(offset).limit(page_size)
-        ).all()
-    )
+    docs = session.exec(stmt.order_by(Document.id.desc()).offset(offset).limit(page_size)).all()
 
     # Prepare response items
     items = [
@@ -259,18 +276,18 @@ def list_documents(
             "media_type": d.media_type,
             "storage_path": d.storage_path,
             "pages": d.pages,
-            "created_at": d.created_at.isoformat() if hasattr(d, "created_at") else None
+            "created_at": d.created_at.isoformat() if hasattr(d, "created_at") else None,
         }
         for d in docs
     ]
-    
+
     # Return paginated response
     return {
         "items": items,
         "page": page,
         "page_size": page_size,
         "total": total,
-        "has_next": (offset + len(items)) < total
+        "has_next": (offset + len(items)) < total,
     }
 
 
@@ -280,8 +297,10 @@ def list_documents(
 def storage_path_to_file_url(storage_path: str) -> str | None:
     try:
         # Get relative path from storage root (e.g. 2025/09/file.pdf)
-        rel = Path(storage_path).resolve().relative_to(
-            Path(__file__).resolve().parents[2] / "storage" / "uploads"
+        rel = (
+            Path(storage_path)
+            .resolve()
+            .relative_to(Path(__file__).resolve().parents[2] / "storage" / "uploads")
         )
         return f"/files/{rel.as_posix()}"
     except Exception:
@@ -292,10 +311,7 @@ def storage_path_to_file_url(storage_path: str) -> str | None:
 # GET endpoint to fetch a single document by ID
 # -----------------------------------------------
 @router.get("/{doc_id}")
-def get_document(
-    doc_id: int = FastAPIPath(..., ge=1),
-    session: Session = Depends(get_session)
-):
+def get_document(doc_id: int = FastAPIPath(..., ge=1), session: Session = Depends(get_session)):
     # Fetch document from DB
     doc = session.get(Document, doc_id)
     if not doc:
@@ -314,7 +330,7 @@ def get_document(
         "media_type": doc.media_type,
         "pages": doc.pages,
         "storage_path": doc.storage_path,
-        "file_url": file_url
+        "file_url": file_url,
     }
 
 
@@ -323,9 +339,7 @@ def get_document(
 # ---------------------------------------------
 @router.post("/{doc_id}/chunk")
 def chunk_document(
-    doc_id: int,
-    rebuild: bool = Body(False, embed=True),
-    session: Session = Depends(get_session)
+    doc_id: int, rebuild: bool = Body(False, embed=True), session: Session = Depends(get_session)
 ):
     # Fetch document from DB
     doc = session.get(Document, doc_id)
@@ -336,9 +350,9 @@ def chunk_document(
     try:
         chunks = run_chunking(session, doc_id, rebuild=rebuild)
     except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Chunking failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Chunking failed: {e}") from e
 
     return {
         "document_id": doc.id,
@@ -351,8 +365,8 @@ def chunk_document(
                 "page": ch.page,
                 "has_text": bool(ch.content_text and ch.content_text.strip()),
             }
-        for ch in chunks
-        ]
+            for ch in chunks
+        ],
     }
 
 
@@ -360,25 +374,24 @@ def chunk_document(
 # POST endpoint to embed document chunks
 # ----------------------------------------
 @router.post("/{doc_id}/embed")
-def embed_document_chunks(
-    doc_id: int,
-    session: Session = Depends(get_session)
-):
+def embed_document_chunks(doc_id: int, session: Session = Depends(get_session)):
     # Fetch document from DB
     doc = session.get(Document, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
     # Fetch all chunks for the document
-    chunks: list[Chunk] = session.exec(
-        select(Chunk).where(Chunk.document_id == doc_id)
-    ).all()
+    chunks: list[Chunk] = session.exec(select(Chunk).where(Chunk.document_id == doc_id)).all()
 
     if not chunks:
         return {"document_id": doc.id, "embedded": 0, "details": []}
 
     # Filter chunks that need embedding
-    text_chunks = [c for c in chunks if c.modality == "text" and (c.content_text or "").strip() and not c.embedding_key]
+    text_chunks = [
+        c
+        for c in chunks
+        if c.modality == "text" and (c.content_text or "").strip() and not c.embedding_key
+    ]
     image_chunks = [c for c in chunks if c.modality == "image" and not c.embedding_key]
 
     details = []
@@ -400,10 +413,8 @@ def embed_document_chunks(
 
     # Embed IMAGE chunks
     if image_chunks:
-        paths = []
-        for c in image_chunks:
-            abs_path = Path(__file__).resolve().parents[2] / doc.storage_path
-            paths.append(abs_path)
+        abs_path = Path(__file__).resolve().parents[2] / doc.storage_path
+        paths = [abs_path for _ in image_chunks]
 
         vecs = embed_images(paths)
         ids = np.array([c.id for c in image_chunks], dtype=np.int64)
@@ -417,7 +428,11 @@ def embed_document_chunks(
         session.commit()
         details.append({"modality": "image", "count": len(image_chunks)})
 
-    return {"document_id": doc.id, "embedded": sum(d["count"] for d in details) if details else 0, "details": details}
+    return {
+        "document_id": doc.id,
+        "embedded": sum(d["count"] for d in details) if details else 0,
+        "details": details,
+    }
 
 
 # --------------------------------
@@ -426,7 +441,7 @@ def embed_document_chunks(
 @router.post("/embed/rebuild")
 def rebuild_index(
     modality: Literal["text", "image"] = Body(..., embed=True),
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
 ):
     # TEXT
     if modality == "text":
@@ -435,7 +450,9 @@ def rebuild_index(
         ids = np.array([c.id for c in all_chunks if (c.content_text or "").strip()], dtype=np.int64)
         if ids.size == 0:
             # write empty index
-            index = faiss_rebuild("text", np.zeros((0, DIMS["text"]), dtype="float32"), np.zeros((0,), dtype=np.int64))
+            index = faiss_rebuild(
+                "text", np.zeros((0, DIMS["text"]), dtype="float32"), np.zeros((0,), dtype=np.int64)
+            )
             faiss_save(index, "text")
             return {"modality": "text", "rebuilt": 0}
         vecs = embed_texts(texts)
@@ -464,7 +481,9 @@ def rebuild_index(
             paths.append(abs_path)
             ids.append(c.id)
     if not ids:
-        index = faiss_rebuild("image", np.zeros((0, DIMS["image"]), dtype="float32"), np.zeros((0,), dtype=np.int64))
+        index = faiss_rebuild(
+            "image", np.zeros((0, DIMS["image"]), dtype="float32"), np.zeros((0,), dtype=np.int64)
+        )
         faiss_save(index, "image")
         return {"modality": "image", "rebuilt": 0}
 

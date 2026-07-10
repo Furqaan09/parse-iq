@@ -1,19 +1,19 @@
-import torch
-import numpy as np
 from pathlib import Path
-from PIL import Image
-from typing import List, Optional
 
+import numpy as np
+import torch
+from PIL import Image
 from sentence_transformers import SentenceTransformer
 from transformers import CLIPModel, CLIPProcessor
+
 from app.core.device import get_torch_device
 
 # ---------------------------------------------------
 # Singleton instances for models to avoid reloading
 # ---------------------------------------------------
-_TEXT_MODEL: Optional[SentenceTransformer] = None
-_IMAGE_MODEL: Optional[CLIPModel] = None
-_IMAGE_PROC: Optional[CLIPProcessor] = None
+_TEXT_MODEL: SentenceTransformer | None = None
+_IMAGE_MODEL: CLIPModel | None = None
+_IMAGE_PROC: CLIPProcessor | None = None
 
 device = get_torch_device()
 
@@ -24,7 +24,9 @@ device = get_torch_device()
 def get_text_model() -> SentenceTransformer:
     global _TEXT_MODEL
     if _TEXT_MODEL is None:
-        _TEXT_MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device=str(device))
+        _TEXT_MODEL = SentenceTransformer(
+            "sentence-transformers/all-MiniLM-L6-v2", device=str(device)
+        )
     return _TEXT_MODEL
 
 
@@ -55,7 +57,7 @@ def _l2_normalize(mat: np.ndarray) -> np.ndarray:
     return (mat / norms).astype(np.float32)
 
 
-def embed_texts(texts: List[str], batch_size: int = 64) -> np.ndarray:
+def embed_texts(texts: list[str], batch_size: int = 64) -> np.ndarray:
     """Generate L2-normalized text embeddings."""
     model = get_text_model()
     model.to(device)
@@ -70,7 +72,7 @@ def embed_texts(texts: List[str], batch_size: int = 64) -> np.ndarray:
     return _l2_normalize(embeddings)
 
 
-def embed_images(paths: List[Path], batch_size: int = 16) -> np.ndarray:
+def embed_images(paths: list[Path], batch_size: int = 16) -> np.ndarray:
     """Generate L2-normalized image embeddings."""
     model, proc = get_image_model()
 

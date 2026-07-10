@@ -1,6 +1,7 @@
 import os
-from huggingface_hub import InferenceClient
+
 from dotenv import load_dotenv
+from huggingface_hub import InferenceClient
 
 load_dotenv()
 
@@ -12,6 +13,7 @@ if not HF_TOKEN:
     raise RuntimeError("HF_TOKEN is not set in the environment.")
 
 client = InferenceClient(provider=HF_LLM_PROVIDER, api_key=HF_TOKEN)
+
 
 def generate_with_llm(system_prompt: str, user_prompt: str) -> str:
     """

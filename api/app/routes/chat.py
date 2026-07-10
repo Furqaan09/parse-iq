@@ -1,12 +1,14 @@
 from __future__ import annotations
-from typing import Optional, List
+
 from fastapi import APIRouter, Body, Depends
 from sqlmodel import Session
+
 from app.core.database import get_session
 from app.services.rag import rag_answer
 
 # API router for chat-related endpoints
 router = APIRouter(prefix="/chat", tags=["chat"])
+
 
 # ----------------------------------------
 # POST endpoint to ask a question to LLM
@@ -15,7 +17,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 def chat_ask(
     message: str = Body(..., embed=True),
     top_k: int = Body(6, embed=True),
-    document_ids: Optional[List[int]] = Body(None, embed=True),
+    document_ids: list[int] | None = Body(None, embed=True),
     session: Session = Depends(get_session),
 ):
     """

@@ -1,19 +1,25 @@
-from typing import List, Dict, Any, Optional
+import logging
 from pathlib import Path
+from typing import Any
+
 import numpy as np
 from sqlmodel import Session, select
 
 from app.models import Chunk, Document
 from app.services.embeddings import embed_texts
-from app.services.faiss_index import load_or_new, search as faiss_search
+from app.services.faiss_index import load_or_new
+from app.services.faiss_index import search as faiss_search
 from app.services.llm_provider import generate_with_llm
 
+logger = logging.getLogger(__name__)
+
 MIN_SCORE = 0.25
+
 
 # ------------------------------------------------
 # Function to convert storage path to files path
 # ------------------------------------------------
-def _file_url_from_storage_path(storage_path: str) -> Optional[str]:
+def _file_url_from_storage_path(storage_path: str) -> str | None:
     """
     Convert 'storage/uploads/YYYY/MM/file.pdf' -> '/files/YYYY/MM/file.pdf'
     Only if path exists under uploads.
@@ -31,7 +37,7 @@ def _file_url_from_storage_path(storage_path: str) -> Optional[str]:
 # -------------------------------
 # Function to get ranked chunks
 # -------------------------------
-def _ranked_chunks_by_ids(session: Session, ids: np.ndarray, scores: np.ndarray) -> List[Chunk]:
+def _ranked_chunks_by_ids(session: Session, ids: np.ndarray, scores: np.ndarray) -> list[Chunk]:
     id_list = [int(i) for i in ids if int(i) != -1]
     if not id_list:
         return []
@@ -44,13 +50,10 @@ def _ranked_chunks_by_ids(session: Session, ids: np.ndarray, scores: np.ndarray)
 # --------------------------------------------------------------
 # Function to build the context and generate citations for llm
 # --------------------------------------------------------------
-def _build_context_and_citations(session: Session, chunks: List[Chunk], max_chars: int = 4500):
+def _build_context_and_citations(session: Session, chunks: list[Chunk], max_chars: int = 4500):
     # fetch docs
     doc_ids = list({c.document_id for c in chunks})
-    docs = {
-        d.id: d
-        for d in session.exec(select(Document).where(Document.id.in_(doc_ids))).all()
-    }
+    docs = {d.id: d for d in session.exec(select(Document).where(Document.id.in_(doc_ids))).all()}
 
     context_parts = []
     citations = []
@@ -67,9 +70,7 @@ def _build_context_and_citations(session: Session, chunks: List[Chunk], max_char
         # budget context size
         if total + len(snippet) > max_chars and len(context_parts) > 0:
             break
-        file_url = (
-            _file_url_from_storage_path(d.storage_path) if d.storage_path else None
-        )
+        file_url = _file_url_from_storage_path(d.storage_path) if d.storage_path else None
 
         context_parts.append(f"[{idx}] {d.title} (p.{c.page or 1})\n{snippet}\n")
         citations.append(
@@ -96,8 +97,8 @@ def rag_answer(
     session: Session,
     query: str,
     top_k: int = 6,
-    restrict_doc_ids: Optional[List[int]] = None,
-) -> Dict[str, Any]:
+    restrict_doc_ids: list[int] | None = None,
+) -> dict[str, Any]:
     # 1) embed query & retrieve text chunks
     qvec = embed_texts([query])[0]
     index = load_or_new("text")
@@ -113,7 +114,7 @@ def rag_answer(
 
     scored_ids = [
         (float(score), int(chunk_id))
-        for score, chunk_id in zip(scores, ids)
+        for score, chunk_id in zip(scores, ids, strict=True)
         if int(chunk_id) != -1
     ]
 
@@ -151,16 +152,15 @@ def rag_answer(
     # 2) build context and citations
     context, citations = _build_context_and_citations(session, texty, max_chars=4500)
 
-    print("RAG: retrieval complete, building prompt...")
-    print(f"RAG: number of citations = {len(citations)}")
-    print("RAG: calling generator...")
+    logger.debug("RAG: retrieval complete, building prompt (%d citations)", len(citations))
+    logger.debug("RAG: calling generator...")
 
     # 3) craft grounded prompt
     system = (
         "You are ParseIQ's document assistant.\n"
         "Answer ONLY from the provided CONTEXT.\n"
         "If the CONTEXT does not contain the answer, reply exactly:\n"
-        "\"I could not find that information in the provided documents.\"\n"
+        '"I could not find that information in the provided documents."\n'
         "Do not use outside knowledge.\n"
         "Do not guess.\n"
         "Cite sources in brackets like [1], [2] only when the answer is supported by context."
