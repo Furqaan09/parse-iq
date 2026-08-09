@@ -5,7 +5,7 @@ export default function DocumentList() {
     const [items, setItems] = useState<DocumentItem[]>([])
     const [page, setPage] = useState(1)
     const [total, setTotal] = useState(0)
-    const [pageSize, setPageSize] = useState(20)
+    const [pageSize] = useState(20)
     const [hasNext, setHasNext] = useState(false)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
