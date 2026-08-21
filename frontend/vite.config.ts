@@ -7,12 +7,16 @@ export default defineConfig({
     plugins: [react(), tailwindcss()],
     server: {
         proxy: {
-            // Proxy API requests to the backend server
+            // Proxy API and file requests to the backend server
             '/api': {
                 target: 'http://localhost:8000',
                 changeOrigin: true,
-                rewrite: (path) => path.replace(/^\/api/, '')
-            }
+                rewrite: (path) => path.replace(/^\/api/, ''),
+            },
+            '/files': {
+                target: 'http://localhost:8000',
+                changeOrigin: true,
+            },
         },
     },
 })

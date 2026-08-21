@@ -12,8 +12,6 @@ type ChatMessage =
         citations: ChatCitation[]
     }
 
-const API_ORIGIN = import.meta.env.VITE_API_ORIGIN || "http://localhost:8000"
-
 export default function ChatPanel() {
     const [messages, setMessages] = useState<ChatMessage[]>([])
     const [input, setInput] = useState("")
@@ -59,9 +57,7 @@ export default function ChatPanel() {
 
     function openCitation(fileUrl: string | null) {
         if (!fileUrl) return
-        const isAbsolute = /^https?:\/\//i.test(fileUrl)
-        const fullUrl = isAbsolute ? fileUrl : `${API_ORIGIN}${fileUrl}`
-        window.open(fullUrl, "_blank", "noopener,noreferrer")
+        window.open(fileUrl, "_blank", "noopener,noreferrer")
     }
 
     return (
@@ -86,8 +82,8 @@ export default function ChatPanel() {
                     <div
                         key={idx}
                         className={`rounded-xl p-4 ${msg.role === "user"
-                                ? "ml-auto max-w-[85%] border bg-blue-50"
-                                : "mr-auto max-w-[90%] border bg-white"
+                            ? "ml-auto max-w-[85%] border bg-blue-50"
+                            : "mr-auto max-w-[90%] border bg-white"
                             }`}
                     >
                         <div className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">

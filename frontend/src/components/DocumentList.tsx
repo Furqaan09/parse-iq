@@ -37,13 +37,8 @@ export default function DocumentList() {
                 return
             }
 
-            // If the API returns an absolute URL (e.g., S3 later), use it as-is.
-            const isAbsolute = /^https?:\/\//i.test(doc.file_url)
-            const apiOrigin = import.meta.env.VITE_API_ORIGIN
-            const url = isAbsolute ? doc.file_url : `${apiOrigin}${doc.file_url}`
-
             // Open in a new tab (served by FastAPI static mount)
-            window.open(url, "_blank", "noopener,noreferrer")
+            window.open(doc.file_url, "_blank", "noopener,noreferrer")
         } catch (e: any) {
             alert(e?.message ?? "Failed to open document")
         }
