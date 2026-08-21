@@ -10,6 +10,7 @@ from app.services.embeddings import embed_texts
 from app.services.faiss_index import load_or_new
 from app.services.faiss_index import search as faiss_search
 from app.services.llm_provider import generate_with_llm
+from app.services.reranker import rerank
 
 logger = logging.getLogger(__name__)
 
@@ -141,13 +142,15 @@ def rag_answer(
 
     # keep top_k with text
     texty = [c for c in chunks if (c.content_text or "").strip()]
-    texty = texty[:top_k]
 
     if not texty:
         return {
             "answer": "No text snippets matched your question in the current documents.",
             "citations": [],
         }
+
+    # Re-rank the full candidate pool with a cross-encoder, then keep the best top_k
+    texty = rerank(query, texty, top_k=top_k)
 
     # 2) build context and citations
     context, citations = _build_context_and_citations(session, texty, max_chars=4500)
