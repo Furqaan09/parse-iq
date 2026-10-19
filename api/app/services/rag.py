@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -10,10 +11,12 @@ from app.services.embeddings import embed_texts
 from app.services.faiss_index import load_or_new
 from app.services.faiss_index import search as faiss_search
 from app.services.llm_provider import generate_with_llm
+from app.services.reranker import rerank
 
 logger = logging.getLogger(__name__)
 
 MIN_SCORE = 0.25
+_CITATION_PATTERN = re.compile(r"\s?\[(\d+)\]")
 
 
 # ------------------------------------------------
@@ -90,14 +93,34 @@ def _build_context_and_citations(session: Session, chunks: list[Chunk], max_char
     return context, citations
 
 
+# ------------------------------------------------------------------------
+# Function to validate citations in the answer against retrieved context
+# ------------------------------------------------------------------------
+def _validate_citations(answer: str, citations: list[dict]) -> tuple[str, list[dict]]:
+    """
+    Cross-check model's [n] markers against citations actually built from retrived context:
+        - citations never referenced in the answer are dropped from the list
+        - [n] markers that don't match any real citation are stripped from the answer text
+    """
+    valid_ns = {c["n"] for c in citations}
+    cited_ns = {int(n) for n in _CITATION_PATTERN.findall(answer)}
+
+    used_ns = cited_ns & valid_ns
+    filtered_citations = [c for c in citations if c["n"] in used_ns]
+
+    def _strip_invalid(match: re.Match) -> str:
+        n = int(match.group(1))
+        return match.group(0) if n in valid_ns else ""
+
+    cleaned_answer = _CITATION_PATTERN.sub(_strip_invalid, answer)
+    return cleaned_answer, filtered_citations
+
+
 # ---------------------------------
 # Function to generate RAG answer
 # ---------------------------------
 def rag_answer(
-    session: Session,
-    query: str,
-    top_k: int = 6,
-    restrict_doc_ids: list[int] | None = None,
+    session: Session, query: str, top_k: int = 6, restrict_doc_ids: list[int] | None = None
 ) -> dict[str, Any]:
     # 1) embed query & retrieve text chunks
     qvec = embed_texts([query])[0]
@@ -141,13 +164,15 @@ def rag_answer(
 
     # keep top_k with text
     texty = [c for c in chunks if (c.content_text or "").strip()]
-    texty = texty[:top_k]
 
     if not texty:
         return {
             "answer": "No text snippets matched your question in the current documents.",
             "citations": [],
         }
+
+    # Re-rank the full candidate pool with a cross-encoder, then keep the best top_k
+    texty = rerank(query, texty, top_k=top_k)
 
     # 2) build context and citations
     context, citations = _build_context_and_citations(session, texty, max_chars=4500)
@@ -173,5 +198,8 @@ def rag_answer(
 
     # 4) generate with the local HF model
     answer = generate_with_llm(system, user)
+
+    # 5) verify [n] citations against what was actually retrieved
+    answer, citations = _validate_citations(answer, citations)
 
     return {"answer": answer, "citations": citations}

@@ -1,15 +1,140 @@
 import logging
 import re
+import textwrap
 from pathlib import Path
 
 import pytesseract
 from PIL import Image
-from PyPDF2 import PdfReader
+from pypdf import PdfReader
 from sqlmodel import Session, select
 
 from app.models import Chunk, Document
 
 logger = logging.getLogger(__name__)
+logging.getLogger("pypdf").setLevel(logging.ERROR)
+
+CHUNK_TARGET_CHARS = 800  # header + body must stay under MiniLM's 256-token limit
+
+_WHITESPACE = re.compile(r"[ \t]+")
+_PAGE_NUMBER = re.compile(r"^\d{1,3}$")
+_BULLET = re.compile(r"^(?:[•\-*·▪◦]|o\s)")
+_LINE_WRAP_HYPHEN = re.compile(r"([a-z])-[ \t]*\n[ \t]*([a-z])")
+
+
+# (page, text, is_heading)
+Line = tuple[int, str, bool]
+
+
+# ------------------
+# Helper functions
+# ------------------
+def _is_heading(line: str, prev_blank: bool) -> bool:
+    """Short, capitalized line right after a blank line, not a label/bullet/page number."""
+    if not prev_blank:
+        return False
+    if len(line) > 60 or len(line.split()) > 7:
+        return False
+    if _PAGE_NUMBER.match(line) or _BULLET.match(line):
+        return False
+    if line.endswith((":", ".", ",", ";")):
+        return False
+    return line[0].isupper()
+
+
+def _lines_from_text(text: str, page: int) -> list[Line]:
+    """Normalize whitespace per line, drop page-number lines, flag headings."""
+    # Rejoin words hyphenated across a line wrap ("mys-\nterious" -> "mysterious").
+    text = _LINE_WRAP_HYPHEN.sub(r"\1\2", text)
+    lines: list[Line] = []
+    prev_blank = True
+
+    for raw in text.split("\n"):
+        line = _WHITESPACE.sub(" ", raw).strip()
+        if not line:
+            prev_blank = True
+            continue
+        if _PAGE_NUMBER.match(line):
+            continue
+        lines.append((page, line, _is_heading(line, prev_blank)))
+        prev_blank = False
+    return lines
+
+
+def _split_into_sections(lines: list[Line]) -> list[tuple[str | None, list[tuple[int, str]]]]:
+    """Group lines under the most recent heading. Text before any heading gets None."""
+    sections: list[tuple[str | None, list[tuple[int, str]]]] = []
+    heading: str | None = None
+    body: list[tuple[int, str]] = []
+
+    for page, text, is_heading in lines:
+        if is_heading:
+            if body:
+                sections.append((heading, body))
+            heading, body = text, []
+        else:
+            body.append((page, text))
+    if body:
+        sections.append((heading, body))
+    return sections
+
+
+def _pack_section(
+    body: list[tuple[int, str]], target: int = CHUNK_TARGET_CHARS
+) -> list[list[tuple[int, str]]]:
+    """
+    Greedily pack whole lines into chunks of up to `target` chars. Lines longer
+    than `target` are wrapped at word boundaries. The previous chunk's last line
+    is carried over as overlap, but only if it's short; otherwise it would
+    create a near-duplicate chunk.
+    """
+    pieces = [(page, part) for page, line in body for part in textwrap.wrap(line, target)]
+    chunks: list[list[tuple[int, str]]] = []
+    current: list[tuple[int, str]] = []
+    size = 0
+    carried = 0  # how many items in `current` are overlap, not new content
+
+    for page, part in pieces:
+        if size + len(part) + 1 > target and len(current) > carried:
+            chunks.append(current)
+            tail = current[-1]
+            if len(tail[1]) <= target // 4:
+                current, size, carried = [tail], len(tail[1]) + 1, 1
+            else:
+                current, size, carried = [], 0, 0
+        current.append((page, part))
+        size += len(part) + 1
+    if len(current) > carried:
+        chunks.append(current)
+    return chunks
+
+
+def _save_chunks(session: Session, doc: Document, lines: list[Line]) -> list[Chunk]:
+    """Shared by PDF, image (OCR) and text: lines -> sections -> chunks -> DB rows."""
+    created: list[Chunk] = []
+
+    for heading, body in _split_into_sections(lines):
+        for piece in _pack_section(body):
+            page = piece[0][0]  # cite the page the chunk starts on
+            header = f"Document: {doc.title}\n"
+            if heading:
+                header += f"Section: {heading}\n"
+            header += f"Page: {page}\n\n"
+            ch = Chunk(
+                document_id=doc.id,
+                chunk_index=len(created),
+                modality="text",
+                page=page,
+                content_text=header + "\n".join(text for _, text in piece),
+                bbox=None,
+                embedding_key=None,
+            )
+            session.add(ch)
+            created.append(ch)
+    session.commit()
+
+    for ch in created:
+        session.refresh(ch)
+    return created
 
 
 # ------------------------------------------------------
@@ -33,66 +158,6 @@ def _safe_trim(text: str | None) -> str | None:
     return t if t else None
 
 
-def _clean_text(text: str) -> str:
-    """Light cleanup for extracted/OCR text."""
-    text = text.replace("\r", "\n")
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
-
-def split_text_into_chunks(text: str, target_size: int = 900, overlap: int = 150) -> list[str]:
-    """
-    Split text into paragraph-aware overlapping chunks.
-    """
-    text = _clean_text(text)
-    if not text:
-        return []
-
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-    chunks = []
-    current = ""
-
-    for para in paragraphs:
-        # If adding this paragraph stays within target, append it
-        if len(current) + len(para) + 2 <= target_size:
-            current = f"{current}\n\n{para}".strip()
-        else:
-            # Save current chunk if it exists
-            if current:
-                chunks.append(current)
-
-            # If paragraph itself is too large, split it further
-            if len(para) > target_size:
-                start = 0
-                while start < len(para):
-                    end = start + target_size
-                    piece = para[start:end].strip()
-                    if piece:
-                        chunks.append(piece)
-                    start += target_size - overlap
-                current = ""
-            else:
-                # Start new chunk with this paragraph
-                current = para
-
-    if current:
-        chunks.append(current)
-
-    # Add overlap between adjacent chunks
-    overlapped = []
-    for i, chunk in enumerate(chunks):
-        if i == 0:
-            overlapped.append(chunk)
-        else:
-            prev = chunks[i - 1]
-            prefix = prev[-overlap:].strip()
-            merged = f"{prefix}\n\n{chunk}".strip()
-            overlapped.append(merged)
-
-    return overlapped
-
-
 def chunk_pdf(session: Session, doc: Document) -> list[Chunk]:
     """Create multiple text chunks per PDF page."""
     # Load the PDF file
@@ -100,51 +165,20 @@ def chunk_pdf(session: Session, doc: Document) -> list[Chunk]:
     if not path.exists():
         raise FileNotFoundError(f"File does not exist: {path}")
 
-    reader = PdfReader(str(path))
-    created: list[Chunk] = []
-    running_chunk_index = 0
-
-    # Create multiple chunks for each page
-    for page_num, page in enumerate(reader.pages, start=1):
+    lines: list[Line] = []
+    for page_num, page in enumerate(PdfReader(str(path)).pages, start=1):
         try:
-            raw_text = page.extract_text() or ""
+            text = page.extract_text() or ""
         except Exception:
-            raw_text = ""
-
-        page_text = _safe_trim(raw_text)
-        if not page_text:
+            logger.warning("Text extraction failed on page %d of document %s", page_num, doc.id)
             continue
-        subchunks = split_text_into_chunks(page_text, target_size=900, overlap=150)
-
-        for subchunk in subchunks:
-            enriched_text = f"Document: {doc.title}\n" f"Page: {page_num}\n\n" f"{subchunk}"
-
-            ch = Chunk(
-                document_id=doc.id,
-                chunk_index=running_chunk_index,
-                modality="text",
-                page=page_num,
-                content_text=enriched_text,
-                bbox=None,
-                embedding_key=None,
-            )
-
-            session.add(ch)
-            created.append(ch)
-            running_chunk_index += 1
-
-    # Commit all chunks at once to the database
-    session.commit()
-    for ch in created:
-        session.refresh(ch)
-
-    return created
+        lines.extend(_lines_from_text(text, page_num))
+    return _save_chunks(session, doc, lines)
 
 
-# ------------------------------------------------------------
-# Chunking strategy for Images: one chunk per image for CLIP
-# + multiple OCR text chunks for text retrieval
-# ------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Chunking strategy for Images: multiple OCR text chunks for text retrieval
+# ---------------------------------------------------------------------------
 def _try_ocr_image(path: Path) -> str | None:
     """Try to OCR the image and return extracted text or None."""
     try:
@@ -156,10 +190,7 @@ def _try_ocr_image(path: Path) -> str | None:
 
 
 def chunk_image(session: Session, doc: Document) -> list[Chunk]:
-    """
-    Create one chunk for the image for CLIP
-    and multiple OCR text chunks for text retrieval.
-    """
+    """Create multiple OCR text chunks for text retrieval."""
     # Load the image file
     path = _abs_storage_path(doc)
     if not path.exists():
@@ -170,93 +201,24 @@ def chunk_image(session: Session, doc: Document) -> list[Chunk]:
     except Exception as e:
         raise RuntimeError(f"Invalid image for chunking: {e}") from e
 
-    created: list[Chunk] = []
-    running_chunk_index = 0
-
-    # Image chunk for visual embeddings
-    image_chunk = Chunk(
-        document_id=doc.id,
-        modality="image",
-        page=1,
-        chunk_index=running_chunk_index,
-        content_text=None,
-        bbox=None,
-        embedding_key=None,
-    )
-    session.add(image_chunk)
-    created.append(image_chunk)
-    running_chunk_index += 1
-
     # OCR text -> multiple text chunks
     ocr_text = _try_ocr_image(path)
-    if ocr_text:
-        subchunks = split_text_into_chunks(
-            ocr_text,
-            target_size=900,
-            overlap=150,
-        )
-
-        for subchunk in subchunks:
-            enriched_text = f"Document: {doc.title}\n" f"Page: 1\n\n" f"{subchunk}"
-
-            text_chunk = Chunk(
-                document_id=doc.id,
-                modality="text",
-                page=1,
-                chunk_index=running_chunk_index,
-                content_text=enriched_text,
-                bbox=None,
-                embedding_key=None,
-            )
-            session.add(text_chunk)
-            created.append(text_chunk)
-            running_chunk_index += 1
-
-    session.commit()
-    for ch in created:
-        session.refresh(ch)
-
-    return created
+    if not ocr_text:
+        return []
+    return _save_chunks(session, doc, _lines_from_text(ocr_text, page=1))
 
 
 # ----------------------------------
 # Chunking strategy for text files
 # ----------------------------------
 def chunk_text(session: Session, doc: Document) -> list[Chunk]:
-    """Placeholder function for text file chunking."""
+    """Function for text file chunking."""
     path = _abs_storage_path(doc)
     if not path.exists():
         raise FileNotFoundError(f"File does not exist: {path}")
 
     raw_text = path.read_text(encoding="utf-8", errors="ignore")
-    raw_text = _safe_trim(raw_text)
-    if not raw_text:
-        return []
-
-    # Create chunks from the text content
-    created: list[Chunk] = []
-    subchunks = split_text_into_chunks(raw_text, target_size=900, overlap=150)
-
-    for idx, subchunk in enumerate(subchunks):
-        enriched_text = f"Document: {doc.title}\n" f"Page: 1\n\n" f"{subchunk}"
-
-        ch = Chunk(
-            document_id=doc.id,
-            modality="text",
-            page=1,
-            chunk_index=idx,
-            content_text=enriched_text,
-            bbox=None,
-            embedding_key=None,
-        )
-        session.add(ch)
-        created.append(ch)
-
-    session.commit()
-    for ch in created:
-        session.refresh(ch)
-
-    return created
+    return _save_chunks(session, doc, _lines_from_text(raw_text, page=1))
 
 
 # ---------------------------------------------------

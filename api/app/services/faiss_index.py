@@ -4,7 +4,7 @@ from typing import Literal
 import faiss
 import numpy as np
 
-IndexModality = Literal["text", "image"]
+IndexModality = Literal["text"]
 
 # --------------------------------------------------------
 # Ensure the FAISS storage directory exists or create it
@@ -16,7 +16,7 @@ FAISS_DIR.mkdir(parents=True, exist_ok=True)
 # ----------------------------------------------
 # Dimensions of index for different modalities
 # ----------------------------------------------
-DIMS = {"text": 384, "image": 512}
+DIMS = {"text": 384}
 
 
 # ------------------------------------------

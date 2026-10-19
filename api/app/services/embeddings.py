@@ -1,10 +1,5 @@
-from pathlib import Path
-
 import numpy as np
-import torch
-from PIL import Image
 from sentence_transformers import SentenceTransformer
-from transformers import CLIPModel, CLIPProcessor
 
 from app.core.device import get_torch_device
 
@@ -12,8 +7,6 @@ from app.core.device import get_torch_device
 # Singleton instances for models to avoid reloading
 # ---------------------------------------------------
 _TEXT_MODEL: SentenceTransformer | None = None
-_IMAGE_MODEL: CLIPModel | None = None
-_IMAGE_PROC: CLIPProcessor | None = None
 
 device = get_torch_device()
 
@@ -28,24 +21,6 @@ def get_text_model() -> SentenceTransformer:
             "sentence-transformers/all-MiniLM-L6-v2", device=str(device)
         )
     return _TEXT_MODEL
-
-
-# -------------------------------------------
-# Function to get the image embedding model
-# -------------------------------------------
-def get_image_model() -> tuple[CLIPModel, CLIPProcessor]:
-    global _IMAGE_MODEL, _IMAGE_PROC
-    if _IMAGE_MODEL is None or _IMAGE_PROC is None:
-        _IMAGE_MODEL = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-        _IMAGE_PROC = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-        _IMAGE_MODEL.eval()
-        _IMAGE_MODEL.to(device)
-        try:
-            # reduce thread pressure
-            torch.set_num_threads(1)
-        except Exception:
-            pass
-    return _IMAGE_MODEL, _IMAGE_PROC
 
 
 # -----------------------------
@@ -70,27 +45,3 @@ def embed_texts(texts: list[str], batch_size: int = 64) -> np.ndarray:
         show_progress_bar=False,
     )
     return _l2_normalize(embeddings)
-
-
-def embed_images(paths: list[Path], batch_size: int = 16) -> np.ndarray:
-    """Generate L2-normalized image embeddings."""
-    model, proc = get_image_model()
-
-    imgs = [Image.open(p).convert("RGB") for p in paths]
-    embs_list: list[np.ndarray] = []
-
-    for i in range(0, len(imgs), batch_size):
-        batch = imgs[i : i + batch_size]
-        inputs = proc(images=batch, return_tensors="pt").to(device)
-
-        with torch.no_grad():
-            feats = model.get_image_features(**inputs)
-        feats = feats.cpu().numpy()
-        embs_list.append(feats)
-
-    embs = (
-        np.vstack(embs_list)
-        if embs_list
-        else np.zeros((0, model.visual.output_dim), dtype=np.float32)
-    )
-    return _l2_normalize(embs)
