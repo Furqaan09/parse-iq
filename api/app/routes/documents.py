@@ -8,7 +8,7 @@ from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, Upload
 from fastapi import Path as FastAPIPath
 from fastapi.responses import JSONResponse
 from PIL import Image
-from PyPDF2 import PdfReader
+from pypdf import PdfReader
 from sqlalchemy import func
 from sqlmodel import Session, select
 
