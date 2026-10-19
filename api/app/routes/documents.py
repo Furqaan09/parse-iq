@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 from app.core.database import get_session
 from app.models import Chunk, Document
 from app.services.chunking import run_chunking
-from app.services.embeddings import embed_images, embed_texts
+from app.services.embeddings import embed_texts
 from app.services.faiss_index import DIMS, load_or_new
 from app.services.faiss_index import add as faiss_add
 from app.services.faiss_index import rebuild as faiss_rebuild
@@ -83,66 +83,42 @@ def sanitize_filename(filename: str) -> str:
     return f"{safe_stem}{safe_suffix}"
 
 
+def embed_pending_text_chunks(session: Session, chunks: list[Chunk]) -> int:
+    """Embed text chunks that haven't been indexed yet. Returns how many were embedded."""
+    pending = [
+        c
+        for c in chunks
+        if c.modality == "text" and (c.content_text or "").strip() and not c.embedding_key
+    ]
+    if not pending:
+        return 0
+
+    vecs = embed_texts([c.content_text or "" for c in pending])
+    ids = np.array([c.id for c in pending], dtype=np.int64)
+
+    index = load_or_new("text")
+    faiss_add(index, vecs, ids)
+    faiss_save(index, "text")
+
+    for c in pending:
+        c.embedding_key = "text"
+    session.add_all(pending)
+    session.commit()
+    return len(pending)
+
+
 def process_document_after_upload(doc: Document, session: Session) -> dict:
     """
     Run chunking and embeddings for a document immediately after upload.
     Returns a summary of processing.
     """
-    # Chunk the document
     chunks = run_chunking(session, doc.id, rebuild=True)
-
-    # Fetch all chunks for embedding
-    all_chunks: list[Chunk] = session.exec(select(Chunk).where(Chunk.document_id == doc.id)).all()
-
-    text_chunks = [
-        c
-        for c in all_chunks
-        if c.modality == "text" and (c.content_text or "").strip() and not c.embedding_key
-    ]
-    image_chunks = [c for c in all_chunks if c.modality == "image" and not c.embedding_key]
-
-    details = []
-
-    # Embed text chunks
-    if text_chunks:
-        texts = [c.content_text or "" for c in text_chunks]
-        vecs = embed_texts(texts)
-        ids = np.array([c.id for c in text_chunks], dtype=np.int64)
-
-        index = load_or_new("text")
-        faiss_add(index, vecs, ids)
-        faiss_save(index, "text")
-
-        for c in text_chunks:
-            c.embedding_key = "text"
-        session.add_all(text_chunks)
-        session.commit()
-
-        details.append({"modality": "text", "count": len(text_chunks)})
-
-    # Embed image chunks
-    if image_chunks:
-        abs_path = Path(__file__).resolve().parents[2] / doc.storage_path
-        paths = [abs_path for _ in image_chunks]
-
-        vecs = embed_images(paths)
-        ids = np.array([c.id for c in image_chunks], dtype=np.int64)
-
-        index = load_or_new("image")
-        faiss_add(index, vecs, ids)
-        faiss_save(index, "image")
-
-        for c in image_chunks:
-            c.embedding_key = "image"
-        session.add_all(image_chunks)
-        session.commit()
-
-        details.append({"modality": "image", "count": len(image_chunks)})
+    embedded = embed_pending_text_chunks(session, chunks)
 
     return {
         "chunks_created": len(chunks),
-        "embedded": sum(d["count"] for d in details) if details else 0,
-        "embedding_details": details,
+        "embedded": embedded,
+        "embedding_details": [{"modality": "text", "count": embedded}] if embedded else [],
     }
 
 
@@ -382,56 +358,12 @@ def embed_document_chunks(doc_id: int, session: Session = Depends(get_session)):
 
     # Fetch all chunks for the document
     chunks: list[Chunk] = session.exec(select(Chunk).where(Chunk.document_id == doc_id)).all()
-
-    if not chunks:
-        return {"document_id": doc.id, "embedded": 0, "details": []}
-
-    # Filter chunks that need embedding
-    text_chunks = [
-        c
-        for c in chunks
-        if c.modality == "text" and (c.content_text or "").strip() and not c.embedding_key
-    ]
-    image_chunks = [c for c in chunks if c.modality == "image" and not c.embedding_key]
-
-    details = []
-
-    # Embed TEXT chunks
-    if text_chunks:
-        texts = [c.content_text or "" for c in text_chunks]
-        vecs = embed_texts(texts)
-        ids = np.array([c.id for c in text_chunks], dtype=np.int64)
-        index = load_or_new("text")
-        faiss_add(index, vecs, ids)
-        faiss_save(index, "text")
-
-        for c in text_chunks:
-            c.embedding_key = "text"
-        session.add_all(text_chunks)
-        session.commit()
-        details.append({"modality": "text", "count": len(text_chunks)})
-
-    # Embed IMAGE chunks
-    if image_chunks:
-        abs_path = Path(__file__).resolve().parents[2] / doc.storage_path
-        paths = [abs_path for _ in image_chunks]
-
-        vecs = embed_images(paths)
-        ids = np.array([c.id for c in image_chunks], dtype=np.int64)
-        index = load_or_new("image")
-        faiss_add(index, vecs, ids)
-        faiss_save(index, "image")
-
-        for c in image_chunks:
-            c.embedding_key = "image"
-        session.add_all(image_chunks)
-        session.commit()
-        details.append({"modality": "image", "count": len(image_chunks)})
+    embedded = embed_pending_text_chunks(session, chunks)
 
     return {
         "document_id": doc.id,
-        "embedded": sum(d["count"] for d in details) if details else 0,
-        "details": details,
+        "embedded": embedded,
+        "details": [{"modality": "text", "count": embedded}] if embedded else [],
     }
 
 
@@ -440,10 +372,9 @@ def embed_document_chunks(doc_id: int, session: Session = Depends(get_session)):
 # --------------------------------
 @router.post("/embed/rebuild")
 def rebuild_index(
-    modality: Literal["text", "image"] = Body(..., embed=True),
+    modality: Literal["text"] = Body("text", embed=True),
     session: Session = Depends(get_session),
 ):
-    # TEXT
     if modality == "text":
         all_chunks = session.exec(select(Chunk).where(Chunk.modality == "text")).all()
         texts = [c.content_text or "" for c in all_chunks if (c.content_text or "").strip()]
@@ -465,34 +396,3 @@ def rebuild_index(
         session.add_all(all_chunks)
         session.commit()
         return {"modality": "text", "rebuilt": len(ids)}
-
-    # IMAGE
-    all_chunks = session.exec(select(Chunk).where(Chunk.modality == "image")).all()
-    # map chunk -> its document path
-    docs = {d.id: d for d in session.exec(select(Document)).all()}  # cache
-    paths = []
-    ids = []
-    for c in all_chunks:
-        d = docs.get(c.document_id)
-        if not d:
-            continue
-        abs_path = Path(__file__).resolve().parents[2] / d.storage_path
-        if abs_path.exists():
-            paths.append(abs_path)
-            ids.append(c.id)
-    if not ids:
-        index = faiss_rebuild(
-            "image", np.zeros((0, DIMS["image"]), dtype="float32"), np.zeros((0,), dtype=np.int64)
-        )
-        faiss_save(index, "image")
-        return {"modality": "image", "rebuilt": 0}
-
-    vecs = embed_images(paths)
-    index = faiss_rebuild("image", vecs, np.array(ids, dtype=np.int64))
-    faiss_save(index, "image")
-    for c in all_chunks:
-        if c.id in ids:
-            c.embedding_key = "image"
-    session.add_all(all_chunks)
-    session.commit()
-    return {"modality": "image", "rebuilt": len(ids)}

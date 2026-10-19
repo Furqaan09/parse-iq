@@ -141,10 +141,9 @@ def chunk_pdf(session: Session, doc: Document) -> list[Chunk]:
     return created
 
 
-# ------------------------------------------------------------
-# Chunking strategy for Images: one chunk per image for CLIP
-# + multiple OCR text chunks for text retrieval
-# ------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Chunking strategy for Images: multiple OCR text chunks for text retrieval
+# ---------------------------------------------------------------------------
 def _try_ocr_image(path: Path) -> str | None:
     """Try to OCR the image and return extracted text or None."""
     try:
@@ -156,10 +155,7 @@ def _try_ocr_image(path: Path) -> str | None:
 
 
 def chunk_image(session: Session, doc: Document) -> list[Chunk]:
-    """
-    Create one chunk for the image for CLIP
-    and multiple OCR text chunks for text retrieval.
-    """
+    """Create multiple OCR text chunks for text retrieval."""
     # Load the image file
     path = _abs_storage_path(doc)
     if not path.exists():
@@ -172,20 +168,6 @@ def chunk_image(session: Session, doc: Document) -> list[Chunk]:
 
     created: list[Chunk] = []
     running_chunk_index = 0
-
-    # Image chunk for visual embeddings
-    image_chunk = Chunk(
-        document_id=doc.id,
-        modality="image",
-        page=1,
-        chunk_index=running_chunk_index,
-        content_text=None,
-        bbox=None,
-        embedding_key=None,
-    )
-    session.add(image_chunk)
-    created.append(image_chunk)
-    running_chunk_index += 1
 
     # OCR text -> multiple text chunks
     ocr_text = _try_ocr_image(path)
