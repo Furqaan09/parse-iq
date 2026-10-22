@@ -70,11 +70,19 @@ def _split_into_sections(lines: list[Line]) -> list[tuple[str | None, list[tuple
         if is_heading:
             if body:
                 sections.append((heading, body))
-            heading, body = text, []
+                heading = text
+            else:
+                # Back-to-back headings: nest them instead of dropping the first.
+                heading = f"{heading} > {text}" if heading else text
+            body = []
         else:
             body.append((page, text))
+
     if body:
         sections.append((heading, body))
+    elif heading:
+        # Document ended on a heading: keep its text instead of dropping it.
+        sections.append((heading, [(lines[-1][0], heading)]))
     return sections
 
 
