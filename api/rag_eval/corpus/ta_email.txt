@@ -1,0 +1,17 @@
+From: Priya Raman <priya.raman@example.edu>
+To: CSCI 4144 students
+Subject: Lab room change and Assignment 2 extension
+
+Hi everyone,
+
+Starting next week, the Wednesday lab moves from Goldberg 134 to the Killam Library Learning Commons, Room 2.
+The lab time stays the same, 13:00 to 14:30.
+
+Because of the server outage last weekend, the Assignment 2 deadline is extended by four days, from February 27 to March 3 at 23:59.
+Assignment 3 and Assignment 4 deadlines do not change.
+
+I will hold extra office hours on Friday from 15:00 to 16:00 in the lab room for anyone who needs help with Assignment 2.
+
+Thanks,
+Priya Raman
+Teaching Assistant, CSCI 4144

@@ -1,5 +1,5 @@
+import datetime
 import re
-from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -137,7 +137,7 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
     safe_filename = sanitize_filename(file.filename)
 
     # Build a storage path
-    today = datetime.utcnow()
+    today = datetime.datetime.now(datetime.UTC)
     dir_path = STORAGE_ROOT / f"{today:%Y}" / f"{today:%m}"
     dir_path.mkdir(parents=True, exist_ok=True)
 

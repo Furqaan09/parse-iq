@@ -1,0 +1,41 @@
+CSCI 3120 Operating Systems
+Winter 2027 Course Syllabus
+
+Instructor Information
+Instructor: Dr. Lucas Bergstrom
+Office: Mona Campbell Building, Room 4012
+Email: lucas.bergstrom@example.edu
+Office Hours: Mondays 10:00 to 11:00
+Class Time: Mondays, Wednesdays and Fridays 9:35 to 10:25
+Classroom: McCain Building, Room 2190
+
+Important Dates
+Last day to drop without a W: February 5
+Study Break: February 16 to 20, no classes
+Project milestones due: February 13 and March 20
+Final project demo: week of April 6
+
+Evaluation Criteria
+Three programming projects: 45% of the final grade
+Weekly quizzes: 15% of the final grade
+Final exam: 40% of the final grade
+There is no midterm exam in this course.
+
+Late Submission Policy
+Projects submitted late receive a 20% deduction per day.
+No project is accepted more than 48 hours after the deadline.
+
+Exam Requirements
+The final exam is open book.
+One double-sided page of handwritten notes is also permitted.
+Laptops and phones are not allowed.
+
+Prerequisites
+CSCI 2121 Computer Organization.
+
+Tentative List of Topics
+Processes and threads
+CPU scheduling
+Synchronization and deadlocks
+Memory management and virtual memory
+File systems

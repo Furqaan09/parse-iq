@@ -7,3 +7,5 @@ storage/
 .git
 *.md
 requirements-dev.txt
+tests/
+rag_eval/

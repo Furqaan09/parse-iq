@@ -1,5 +1,6 @@
 import os
 import shutil
+from contextlib import contextmanager
 
 os.environ.setdefault("DB_HOST", "localhost")
 os.environ.setdefault("DB_PORT", "5433")
@@ -29,9 +30,12 @@ def engine():
     return engine
 
 
-@pytest.fixture
-def client(engine, tmp_path, monkeypatch):
-    """A TestClient with a clean DB, an empty FAISS index, and isolated upload storage."""
+@contextmanager
+def isolated_client(engine, faiss_dir):
+    """
+    A TestClient with a clean DB, an empty FAISS index in `faiss_dir`, and
+    uploads in a throwaway folder. Everything is undone on exit.
+    """
     from fastapi.testclient import TestClient
     from sqlalchemy import text
 
@@ -44,15 +48,43 @@ def client(engine, tmp_path, monkeypatch):
             text("TRUNCATE documents, chunks, kv_extractions, tasks RESTART IDENTITY CASCADE")
         )
 
-    # FAISS index -> pytest's temp dir, so tests never touch storage/faiss/text.faiss.
-    monkeypatch.setattr(faiss_index, "FAISS_DIR", tmp_path)
-
-    # Temp storage dir for uploads
     upload_root = documents.STORAGE_ROOT / "_pytest"
-    monkeypatch.setattr(documents, "STORAGE_ROOT", upload_root)
+    with pytest.MonkeyPatch.context() as mp:
+        # FAISS index -> a temp dir, so tests never touch storage/faiss/text.faiss.
+        mp.setattr(faiss_index, "FAISS_DIR", faiss_dir)
+        mp.setattr(documents, "STORAGE_ROOT", upload_root)
+        try:
+            yield TestClient(app)
+        finally:
+            shutil.rmtree(upload_root, ignore_errors=True)
 
-    yield TestClient(app)
-    shutil.rmtree(upload_root, ignore_errors=True)
+
+@pytest.fixture
+def client(engine, tmp_path):
+    """Fresh, isolated app for a single test."""
+    with isolated_client(engine, tmp_path) as test_client:
+        yield test_client
+
+
+@pytest.fixture(scope="module")
+def eval_corpus(engine, tmp_path_factory):
+    """
+    Uploads every document in rag_eval/corpus/ ONCE per test module, through the
+    real upload endpoint (so it's chunked and embedded exactly like production).
+    Yields {document_id: filename}.
+    """
+    from rag_eval.harness import CORPUS_DIR
+
+    with isolated_client(engine, tmp_path_factory.mktemp("eval_faiss")) as test_client:
+        filenames_by_id = {}
+        for path in sorted(CORPUS_DIR.glob("*.txt")):
+            res = test_client.post(
+                "/documents/upload", files={"file": (path.name, path.read_bytes(), "text/plain")}
+            )
+            assert res.status_code == 200, res.text
+            assert "processing_error" not in res.json()["processing"], res.json()
+            filenames_by_id[res.json()["id"]] = path.name
+        yield filenames_by_id
 
 
 @pytest.fixture

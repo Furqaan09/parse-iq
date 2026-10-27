@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 MIN_SCORE = 0.25
 _CITATION_PATTERN = re.compile(r"\s?\[(\d+)\]")
+REFUSAL_MESSAGE = "I could not find that information in the provided documents."
 
 
 # ------------------------------------------------
@@ -93,6 +94,15 @@ def _build_context_and_citations(session: Session, chunks: list[Chunk], max_char
     return context, citations
 
 
+# ------------------------------------------------------
+# Function to check if the answer is a refusal message
+# ------------------------------------------------------
+def _is_refusal(answer: str) -> bool:
+    """True if the answer is exactly the refusal message, ignoring [n] markers and quotes"""
+    without_markers = _CITATION_PATTERN.sub("", answer).strip().strip('"').strip()
+    return without_markers == REFUSAL_MESSAGE
+
+
 # ------------------------------------------------------------------------
 # Function to validate citations in the answer against retrieved context
 # ------------------------------------------------------------------------
@@ -102,6 +112,9 @@ def _validate_citations(answer: str, citations: list[dict]) -> tuple[str, list[d
         - citations never referenced in the answer are dropped from the list
         - [n] markers that don't match any real citation are stripped from the answer text
     """
+    if _is_refusal(answer):
+        return REFUSAL_MESSAGE, []
+
     valid_ns = {c["n"] for c in citations}
     cited_ns = {int(n) for n in _CITATION_PATTERN.findall(answer)}
 
@@ -116,66 +129,78 @@ def _validate_citations(answer: str, citations: list[dict]) -> tuple[str, list[d
     return cleaned_answer, filtered_citations
 
 
+# -----------------------------
+# Function to retrieve chunks
+# -----------------------------
+def retrieve_chunks(
+    session: Session,
+    query: str,
+    top_k: int = 6,
+    restrict_doc_ids: list[int] | None = None,
+    rerank_results: bool = True,
+) -> list[Chunk]:
+    """
+    Two-stage retrieval.
+        - FAISS (bi-encoder) pulls a wide candidate pool of max(top_k * 4, 20) chunks;
+        a cross-encoder then reranks that pool and the best top_k are returned.
+        - rerank_results=False skips the cross-encoder and returns the top_k in FAISS
+        order. Only used for testing; production always uses reranking.
+    """
+    index = load_or_new("text")
+    if index.ntotal == 0:
+        return []
+
+    # Embed the query and retrieve a candidate pool of chunks from FAISS
+    qvec = embed_texts([query])[0]
+    scores, ids = faiss_search(index, qvec, top_k=max(top_k * 4, 20))
+
+    # Drop FAISS padding (-1) and candidates too dissimilar to be worth reranking
+    candidate_ids = [
+        int(chunk_id)
+        for score, chunk_id in zip(scores, ids, strict=True)
+        if int(chunk_id) != -1 and score >= MIN_SCORE
+    ]
+    if not candidate_ids:
+        return []
+
+    chunks = _ranked_chunks_by_ids(session, np.array(candidate_ids, dtype=np.int64), scores)
+
+    # Filter by allowed document IDs if provided
+    if restrict_doc_ids:
+        allowed = set(restrict_doc_ids)
+        chunks = [c for c in chunks if c.document_id in allowed]
+
+    chunks = [c for c in chunks if (c.content_text or "").strip()]
+
+    # Rerank the candidate pool with cross-encoderand return top_k
+    if rerank_results:
+        return rerank(query, chunks, top_k=top_k)
+
+    return chunks[:top_k]
+
+
 # ---------------------------------
 # Function to generate RAG answer
 # ---------------------------------
 def rag_answer(
     session: Session, query: str, top_k: int = 6, restrict_doc_ids: list[int] | None = None
 ) -> dict[str, Any]:
-    # 1) embed query & retrieve text chunks
-    qvec = embed_texts([query])[0]
-    index = load_or_new("text")
-
-    if index.ntotal == 0:
+    # 1) retrieve the most relevant chunks
+    if load_or_new("text").ntotal == 0:
         return {
             "answer": "I could not find any relevant content yet. Try processing documents first.",
             "citations": [],
         }
 
-    # Search a bit deeper then filter by doc IDs if provided
-    scores, ids = faiss_search(index, qvec, top_k=max(top_k * 4, 20))
-
-    scored_ids = [
-        (float(score), int(chunk_id))
-        for score, chunk_id in zip(scores, ids, strict=True)
-        if int(chunk_id) != -1
-    ]
-
-    if not scored_ids:
-        return {
-            "answer": "I could not find any relevant content in the indexed documents.",
-            "citations": [],
-        }
-
-    scored_ids = [(s, i) for s, i in scored_ids if s >= MIN_SCORE]
-    if not scored_ids:
+    chunks = retrieve_chunks(session, query, top_k=top_k, restrict_doc_ids=restrict_doc_ids)
+    if not chunks:
         return {
             "answer": "I could not find relevant information for that question in the indexed documents.",
             "citations": [],
         }
 
-    filtered_ids = np.array([i for _, i in scored_ids], dtype=np.int64)
-    filtered_scores = np.array([s for s, _ in scored_ids], dtype=np.float32)
-
-    chunks = _ranked_chunks_by_ids(session, filtered_ids, filtered_scores)
-
-    if restrict_doc_ids:
-        chunks = [c for c in chunks if c.document_id in set(restrict_doc_ids)]
-
-    # keep top_k with text
-    texty = [c for c in chunks if (c.content_text or "").strip()]
-
-    if not texty:
-        return {
-            "answer": "No text snippets matched your question in the current documents.",
-            "citations": [],
-        }
-
-    # Re-rank the full candidate pool with a cross-encoder, then keep the best top_k
-    texty = rerank(query, texty, top_k=top_k)
-
     # 2) build context and citations
-    context, citations = _build_context_and_citations(session, texty, max_chars=4500)
+    context, citations = _build_context_and_citations(session, chunks, max_chars=4500)
 
     logger.debug("RAG: retrieval complete, building prompt (%d citations)", len(citations))
     logger.debug("RAG: calling generator...")
@@ -185,7 +210,7 @@ def rag_answer(
         "You are ParseIQ's document assistant.\n"
         "Answer ONLY from the provided CONTEXT.\n"
         "If the CONTEXT does not contain the answer, reply exactly:\n"
-        '"I could not find that information in the provided documents."\n'
+        f'"{REFUSAL_MESSAGE}"\n'
         "Do not use outside knowledge.\n"
         "Do not guess.\n"
         "Cite sources in brackets like [1], [2] only when the answer is supported by context."

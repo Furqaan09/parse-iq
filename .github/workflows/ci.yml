@@ -58,7 +58,7 @@ jobs:
             - name: Apply migrations
               run: alembic upgrade head
 
-            # CAche Hugging Face models to avoid downloading every time
+            # Cache Hugging Face models to avoid downloading every time
             - name: Cache Hugging Face models
               uses: actions/cache@v4
               with:
@@ -67,3 +67,9 @@ jobs:
 
             - name: Run tests
               run: pytest
+              env:
+                RAG_EVAL_REPORT_DIR: ${{ github.workspace }}/eval-reports
+
+            - name: Post retrieval eval report to the run summary
+              if: always()
+              run: cat "$GITHUB_WORKSPACE/eval-reports/retrieval.md" >> "$GITHUB_STEP_SUMMARY" || echo "No report generated"
