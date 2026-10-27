@@ -27,6 +27,22 @@ def test_refusal_returns_no_citations():
     assert kept == []
 
 
+def test_refusal_with_citation_markers_returns_no_citations():
+    answer, kept = _validate_citations(
+        "I could not find that information in the provided documents. [1][2]", CITATIONS
+    )
+    assert answer == "I could not find that information in the provided documents."
+    assert kept == []
+
+
+def test_partial_answer_keeps_its_citations():
+    # Only a complete refusal loses citations
+    _, kept = _validate_citations(
+        "The midterm is March 3 [1]. I could not find the final exam date.", CITATIONS
+    )
+    assert [c["n"] for c in kept] == [1]
+
+
 def test_keeps_original_numbering_instead_of_renumbering():
     _, kept = _validate_citations("Closed book exam [3].", CITATIONS)
     assert kept == [{"n": 3, "title": "Syllabus C"}]
