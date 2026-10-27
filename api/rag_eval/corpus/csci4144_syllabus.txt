@@ -1,0 +1,43 @@
+CSCI 4144 Data Mining and Data Warehousing
+Winter 2027 Course Syllabus
+
+Instructor Information
+Instructor: Dr. Amara Okafor
+Office: Goldberg Computer Science Building, Room 318
+Email: amara.okafor@example.edu
+Office Hours: Thursdays 11:30 to 12:30, or by appointment
+Class Time: Tuesdays and Thursdays 14:35 to 15:55
+Classroom: Life Sciences Centre, Room C242
+
+Important Dates
+Last day to drop without a W: February 5
+Study Break: February 16 to 20, no classes
+Assignment deadlines: 23:59 on February 6, February 27, March 13 and March 27
+Final exam: scheduled by the Registrar during the April 11 to 27 exam period
+
+Evaluation Criteria
+Four assignments: 30% of the final grade
+Midterm exam on March 3: 25% of the final grade
+Final exam: 45% of the final grade
+Students must pass the final exam to pass the course.
+
+Late Submission Policy
+Late assignments lose 10% per day and are not accepted more than three days after the deadline.
+Students with a Student Declaration of Absence form may submit up to three days late without penalty.
+Each student may use at most two absence declarations per term.
+
+Exam Requirements
+Bring photo ID to every exam.
+Exams are closed book.
+Calculators, notes, phones and other electronic aids are not allowed.
+
+Prerequisites
+CSCI 2110 and STAT 2060, or permission of the instructor.
+
+Tentative List of Topics
+Data preprocessing and cleaning
+Data warehousing and OLAP
+Association rule mining
+Classification and decision trees
+Clustering
+Introduction to deep learning

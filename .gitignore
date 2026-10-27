@@ -42,5 +42,6 @@ frontend/.vite/
 # Storage files
 api/storage/
 
-# Planning
+# Planning and Reports
 PLAN.md
+api/rag_eval/reports/

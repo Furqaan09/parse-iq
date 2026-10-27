@@ -32,7 +32,14 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Body", "fastapi.Query", "f
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-markers = ["integration: needs Postgres and downloads the embedding/reranker models"]
+markers = [
+    "integration: needs Postgres and downloads the embedding/reranker models",
+    "eval: scores retrieval/answer quality against the golden set in rag_eval/",
+    "llm: calls the real hosted LLM (costs money, needs HF_TOKEN); skipped by default",
+]
+# Never call the paid LLM unless asked for explicitly with `pytest -m llm`.
+addopts = "-m 'not llm'"
+
 filterwarnings = [
     # faiss's SWIG bindings emit these on Python 3.13; not our code.
     "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
