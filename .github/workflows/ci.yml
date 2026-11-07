@@ -27,12 +27,7 @@ jobs:
                     --health-retries 10
 
         env:
-            DB_HOST: localhost
-            DB_PORT: "5432"
-            DB_USER: parseiq
-            DB_PASSWORD: parseiq_pw
-            DB_NAME: parseiq_test
-            HF_TOKEN: test-token-never-used
+            DATABASE_URL: postgresql+psycopg://parseiq:parseiq_pw@localhost:5432/parseiq_test
 
         steps:
             - uses: actions/checkout@v4

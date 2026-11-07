@@ -2,7 +2,7 @@
 End-to-end answer quality, through the REAL hosted LLM. Not run in CI
 
 Skipped by default (see addopts in pyproject.toml). Run on demand with:
-    HF_TOKEN=<your token> pytest -m llm
+    pytest -m llm       (needs HF_TOKEN in the environment or api/.env)
 """
 
 import os
@@ -22,7 +22,6 @@ from rag_eval.harness import (
 pytestmark = [pytest.mark.integration, pytest.mark.eval, pytest.mark.llm]
 
 GOLDEN = load_golden()
-PLACEHOLDER_TOKEN = "test-token-never-used"  # set by tests/conftest.py
 
 # Loose floors: a broken pipeline fails these; normal model variance doesn't.
 MIN_ANSWER_ACCURACY = 0.75
@@ -35,10 +34,11 @@ MAX_ERROR_RATE = 0.30  # provider error
 @pytest.fixture(scope="module")
 def answers(engine, eval_corpus) -> list[AnswerResult]:
     """Every golden question (answerable and not) through the full RAG pipeline."""
-    if os.environ.get("HF_TOKEN", PLACEHOLDER_TOKEN) == PLACEHOLDER_TOKEN:
-        pytest.skip("needs a real HF_TOKEN in the environment")
-
+    from app.settings import settings
     from app.services.rag import rag_answer
+
+    if settings.hf_token is None:
+        pytest.skip("needs HF_TOKEN in the environment or api/.env")
 
     # Run for all questions and collect all results
     results = []

@@ -1,18 +1,10 @@
-import os
-
 from alembic import context
-from dotenv import load_dotenv
 from sqlmodel import SQLModel
 
-load_dotenv()
+from app.settings import settings
 
 config = context.config
-section = config.config_ini_section
-config.set_section_option(section, "DB_USER", os.getenv("DB_USER"))
-config.set_section_option(section, "DB_PASSWORD", os.getenv("DB_PASSWORD"))
-config.set_section_option(section, "DB_HOST", os.getenv("DB_HOST"))
-config.set_section_option(section, "DB_PORT", os.getenv("DB_PORT"))
-config.set_section_option(section, "DB_NAME", os.getenv("DB_NAME"))
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 target_metadata = SQLModel.metadata
 
