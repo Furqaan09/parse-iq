@@ -5,8 +5,8 @@ import logging
 
 from sqlmodel import Session
 
-from app.core.database import engine
-from app.services.indexing import reindex_all
+from app.db import engine
+from app.ingestion.indexing import reindex_all
 
 
 def main(argv: list[str] | None = None) -> None:

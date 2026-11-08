@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.routes.chat import router as chat_router
 from app.routes.documents import router as documents_router
+from app.settings import STORAGE_DIR
 
 # ------------------------
 # Logging configuration
@@ -49,7 +49,7 @@ app.include_router(chat_router)
 # ---------------------------------
 # Static mount for uploaded files
 # ---------------------------------
-UPLOADS_DIR = Path(__file__).resolve().parents[1] / "storage" / "uploads"
+UPLOADS_DIR = STORAGE_DIR / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Files will be accessible at /files/<YYYY>/<MM>/<filename>

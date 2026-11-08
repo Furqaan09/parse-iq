@@ -11,15 +11,16 @@ from pypdf import PdfReader
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from app.core.database import get_session
+from app.db import get_session
+from app.ingestion.indexing import index_document
 from app.models import Document
-from app.services.indexing import index_document
+from app.settings import API_DIR, STORAGE_DIR
 
 # API router for document-related endpoints
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 # Directory to store uploaded files
-STORAGE_ROOT = Path(__file__).resolve().parents[2] / "storage" / "uploads"
+STORAGE_ROOT = STORAGE_DIR / "uploads"
 
 # Types for media
 MediaType = Literal["pdf", "image", "text"]
@@ -126,7 +127,7 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
         title=title,
         source_type="upload",
         media_type=media_type,
-        storage_path=str(dest_path.relative_to(Path(__file__).resolve().parents[2])),
+        storage_path=str(dest_path.relative_to(API_DIR)),
         pages=pages,
         meta_json=None,
     )
@@ -216,11 +217,7 @@ def list_documents(
 def storage_path_to_file_url(storage_path: str) -> str | None:
     try:
         # Get relative path from storage root (e.g. 2025/09/file.pdf)
-        rel = (
-            Path(storage_path)
-            .resolve()
-            .relative_to(Path(__file__).resolve().parents[2] / "storage" / "uploads")
-        )
+        rel = Path(storage_path).resolve().relative_to(STORAGE_DIR / "uploads")
         return f"/files/{rel.as_posix()}"
     except Exception:
         return None
@@ -239,7 +236,7 @@ def get_document(doc_id: int = FastAPIPath(..., ge=1), session: Session = Depend
     # Convert storage path to file URL
     file_url = None
     if doc.storage_path:
-        abs_path = Path(__file__).resolve().parents[2] / doc.storage_path
+        abs_path = API_DIR / doc.storage_path
         if abs_path.exists():
             file_url = storage_path_to_file_url(str(abs_path))
 

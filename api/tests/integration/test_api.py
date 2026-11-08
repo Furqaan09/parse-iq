@@ -113,8 +113,8 @@ def test_chat_with_no_documents_does_not_call_llm(client, fake_llm):
 def test_reindex_rebuilds_index_without_stale_vectors(client, engine):
     from sqlmodel import Session
 
+    from app.ingestion.indexing import reindex_all
     from app.services import faiss_index
-    from app.services.indexing import reindex_all
 
     upload(client)  # adds N vectors
 

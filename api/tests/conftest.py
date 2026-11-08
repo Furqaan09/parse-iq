@@ -23,7 +23,7 @@ def engine():
     from sqlmodel import SQLModel
 
     import app.models  # noqa: F401
-    from app.core.database import engine
+    from app.db import engine
 
     SQLModel.metadata.create_all(engine)
     return engine

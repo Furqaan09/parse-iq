@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Body, Depends
 from sqlmodel import Session
 
-from app.core.database import get_session
+from app.db import get_session
 from app.services.rag import rag_answer
 
 # API router for chat-related endpoints

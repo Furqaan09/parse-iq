@@ -3,8 +3,12 @@ from pathlib import Path
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Path to the .env file, relative to this file
-ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+# -----------------
+# Important paths
+# -----------------
+API_DIR = Path(__file__).resolve().parents[1]
+STORAGE_DIR = API_DIR / "storage"
+ENV_FILE = API_DIR / ".env"
 
 
 class Settings(BaseSettings):
