@@ -3,8 +3,7 @@ import re
 from pathlib import Path
 from typing import Literal
 
-import numpy as np
-from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi import Path as FastAPIPath
 from fastapi.responses import JSONResponse
 from PIL import Image
@@ -13,13 +12,8 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.core.database import get_session
-from app.models import Chunk, Document
-from app.services.chunking import run_chunking
-from app.services.embeddings import embed_texts
-from app.services.faiss_index import DIMS, load_or_new
-from app.services.faiss_index import add as faiss_add
-from app.services.faiss_index import rebuild as faiss_rebuild
-from app.services.faiss_index import save as faiss_save
+from app.models import Document
+from app.services.indexing import index_document
 
 # API router for document-related endpoints
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -83,45 +77,6 @@ def sanitize_filename(filename: str) -> str:
     return f"{safe_stem}{safe_suffix}"
 
 
-def embed_pending_text_chunks(session: Session, chunks: list[Chunk]) -> int:
-    """Embed text chunks that haven't been indexed yet. Returns how many were embedded."""
-    pending = [
-        c
-        for c in chunks
-        if c.modality == "text" and (c.content_text or "").strip() and not c.embedding_key
-    ]
-    if not pending:
-        return 0
-
-    vecs = embed_texts([c.content_text or "" for c in pending])
-    ids = np.array([c.id for c in pending], dtype=np.int64)
-
-    index = load_or_new("text")
-    faiss_add(index, vecs, ids)
-    faiss_save(index, "text")
-
-    for c in pending:
-        c.embedding_key = "text"
-    session.add_all(pending)
-    session.commit()
-    return len(pending)
-
-
-def process_document_after_upload(doc: Document, session: Session) -> dict:
-    """
-    Run chunking and embeddings for a document immediately after upload.
-    Returns a summary of processing.
-    """
-    chunks = run_chunking(session, doc.id, rebuild=True)
-    embedded = embed_pending_text_chunks(session, chunks)
-
-    return {
-        "chunks_created": len(chunks),
-        "embedded": embedded,
-        "embedding_details": [{"modality": "text", "count": embedded}] if embedded else [],
-    }
-
-
 # ------------------------------------
 # POST endpoint to upload a document
 # ------------------------------------
@@ -168,7 +123,6 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
 
     # Insert document record in DB
     doc = Document(
-        user_id=None,
         title=title,
         source_type="upload",
         media_type=media_type,
@@ -180,22 +134,11 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
     session.commit()
     session.refresh(doc)
 
-    processing = {
-        "chunks_created": 0,
-        "embedded": 0,
-        "embedding_details": [],
-    }
-
     try:
-        processing = process_document_after_upload(doc, session)
+        processing = index_document(session, doc)
     except Exception as e:
-        # Do not fail the upload itself if processing fails
-        processing = {
-            "chunks_created": 0,
-            "embedded": 0,
-            "embedding_details": [],
-            "processing_error": str(e),
-        }
+        # The upload itself still succeeds; the error is reported, not raised
+        processing = {"chunks_created": 0, "embedded": 0, "processing_error": str(e)}
 
     # Return a JSON response
     return JSONResponse(
@@ -205,7 +148,7 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
             "media_type": doc.media_type,
             "storage_path": doc.storage_path,
             "pages": doc.pages,
-            "created_at": doc.created_at.isoformat() if hasattr(doc, "created_at") else None,
+            "created_at": doc.created_at.isoformat(),
             "processing": processing,
         }
     )
@@ -252,7 +195,7 @@ def list_documents(
             "media_type": d.media_type,
             "storage_path": d.storage_path,
             "pages": d.pages,
-            "created_at": d.created_at.isoformat() if hasattr(d, "created_at") else None,
+            "created_at": d.created_at.isoformat(),
         }
         for d in docs
     ]
@@ -308,91 +251,3 @@ def get_document(doc_id: int = FastAPIPath(..., ge=1), session: Session = Depend
         "storage_path": doc.storage_path,
         "file_url": file_url,
     }
-
-
-# ---------------------------------------------
-# POST endpoint to run chunking on a document
-# ---------------------------------------------
-@router.post("/{doc_id}/chunk")
-def chunk_document(
-    doc_id: int, rebuild: bool = Body(False, embed=True), session: Session = Depends(get_session)
-):
-    # Fetch document from DB
-    doc = session.get(Document, doc_id)
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    # Run chunking
-    try:
-        chunks = run_chunking(session, doc_id, rebuild=rebuild)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Chunking failed: {e}") from e
-
-    return {
-        "document_id": doc.id,
-        "created": len(chunks),
-        "media_type": doc.media_type,
-        "chunks": [
-            {
-                "id": ch.id,
-                "modality": ch.modality,
-                "page": ch.page,
-                "has_text": bool(ch.content_text and ch.content_text.strip()),
-            }
-            for ch in chunks
-        ],
-    }
-
-
-# ----------------------------------------
-# POST endpoint to embed document chunks
-# ----------------------------------------
-@router.post("/{doc_id}/embed")
-def embed_document_chunks(doc_id: int, session: Session = Depends(get_session)):
-    # Fetch document from DB
-    doc = session.get(Document, doc_id)
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    # Fetch all chunks for the document
-    chunks: list[Chunk] = session.exec(select(Chunk).where(Chunk.document_id == doc_id)).all()
-    embedded = embed_pending_text_chunks(session, chunks)
-
-    return {
-        "document_id": doc.id,
-        "embedded": embedded,
-        "details": [{"modality": "text", "count": embedded}] if embedded else [],
-    }
-
-
-# --------------------------------
-# POST endpoint to rebuild index
-# --------------------------------
-@router.post("/embed/rebuild")
-def rebuild_index(
-    modality: Literal["text"] = Body("text", embed=True),
-    session: Session = Depends(get_session),
-):
-    if modality == "text":
-        all_chunks = session.exec(select(Chunk).where(Chunk.modality == "text")).all()
-        texts = [c.content_text or "" for c in all_chunks if (c.content_text or "").strip()]
-        ids = np.array([c.id for c in all_chunks if (c.content_text or "").strip()], dtype=np.int64)
-        if ids.size == 0:
-            # write empty index
-            index = faiss_rebuild(
-                "text", np.zeros((0, DIMS["text"]), dtype="float32"), np.zeros((0,), dtype=np.int64)
-            )
-            faiss_save(index, "text")
-            return {"modality": "text", "rebuilt": 0}
-        vecs = embed_texts(texts)
-        index = faiss_rebuild("text", vecs, np.array(ids, dtype=np.int64))
-        faiss_save(index, "text")
-        # mark embedding_key
-        for c in all_chunks:
-            if c.id in ids:
-                c.embedding_key = "text"
-        session.add_all(all_chunks)
-        session.commit()
-        return {"modality": "text", "rebuilt": len(ids)}

@@ -34,8 +34,8 @@ MAX_ERROR_RATE = 0.30  # provider error
 @pytest.fixture(scope="module")
 def answers(engine, eval_corpus) -> list[AnswerResult]:
     """Every golden question (answerable and not) through the full RAG pipeline."""
-    from app.settings import settings
     from app.services.rag import rag_answer
+    from app.settings import settings
 
     if settings.hf_token is None:
         pytest.skip("needs HF_TOKEN in the environment or api/.env")

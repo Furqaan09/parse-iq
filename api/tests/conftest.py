@@ -43,9 +43,7 @@ def isolated_client(engine, faiss_dir):
     from app.main import app
 
     with engine.begin() as conn:
-        conn.execute(
-            text("TRUNCATE documents, chunks, kv_extractions, tasks RESTART IDENTITY CASCADE")
-        )
+        conn.execute(text("TRUNCATE documents, chunks RESTART IDENTITY CASCADE"))
 
     upload_root = documents.STORAGE_ROOT / "_pytest"
     with pytest.MonkeyPatch.context() as mp:

@@ -130,11 +130,8 @@ def _save_chunks(session: Session, doc: Document, lines: list[Line]) -> list[Chu
             ch = Chunk(
                 document_id=doc.id,
                 chunk_index=len(created),
-                modality="text",
                 page=page,
                 content_text=header + "\n".join(text for _, text in piece),
-                bbox=None,
-                embedding_key=None,
             )
             session.add(ch)
             created.append(ch)

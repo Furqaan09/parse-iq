@@ -108,3 +108,21 @@ def test_chat_with_no_documents_does_not_call_llm(client, fake_llm):
     assert res.status_code == 200
     assert res.json()["citations"] == []
     assert fake_llm.calls == []
+
+
+def test_reindex_rebuilds_index_without_stale_vectors(client, engine):
+    from sqlmodel import Session
+
+    from app.services import faiss_index
+    from app.services.indexing import reindex_all
+
+    upload(client)  # adds N vectors
+
+    with Session(engine) as session:
+        summary = reindex_all(session)
+
+    assert summary["documents"] == 1
+    assert summary["failed"] == []
+    assert summary["embedded"] == summary["chunks"] > 0
+    # Check if it's Rebuilt and not Appended
+    assert faiss_index.load_or_new("text").ntotal == summary["embedded"]

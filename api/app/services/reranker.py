@@ -2,24 +2,31 @@ import logging
 
 from sentence_transformers import CrossEncoder
 
-from app.core.device import get_torch_device
 from app.models import Chunk
 
 logger = logging.getLogger(__name__)
 
+
+# ----------------------------------------------------------
+# Singleton instance for the cross-encoder re-ranker model
+# ----------------------------------------------------------
 _RERANKER_MODEL: CrossEncoder | None = None
 
-device = get_torch_device()
 
-
+# ---------------------------------------------------
+# Function to get the cross-encoder re-ranker model
+# ---------------------------------------------------
 def get_reranker_model() -> CrossEncoder:
     global _RERANKER_MODEL
     if _RERANKER_MODEL is None:
         logger.info("Loading cross-encoder re-ranker model...")
-        _RERANKER_MODEL = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", device=str(device))
+        _RERANKER_MODEL = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
     return _RERANKER_MODEL
 
 
+# -----------------
+# Rerank function
+# -----------------
 def rerank(query: str, chunks: list[Chunk], top_k: int) -> list[Chunk]:
     """
     Re-rank `chunks` against `query` with the cross-encoder model and return the top_k results

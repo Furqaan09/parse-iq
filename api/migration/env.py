@@ -1,6 +1,7 @@
 from alembic import context
 from sqlmodel import SQLModel
 
+import app.models  # noqa: F401
 from app.settings import settings
 
 config = context.config
