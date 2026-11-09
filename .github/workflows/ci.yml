@@ -1,75 +1,87 @@
 name: CI
 
 on:
-    push:
-        branches: [main]
-    pull_request:
+  push:
+    branches: [main]
+  pull_request:
 
 jobs:
-    backend:
-        runs-on: ubuntu-latest
-        defaults:
-            run:
-                working-directory: api
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
 
-        services:
-            postgres:
-                image: postgres:16-alpine
-                env:
-                    POSTGRES_USER: parseiq
-                    POSTGRES_PASSWORD: parseiq_pw
-                    POSTGRES_DB: parseiq_test
-                ports: ["5432:5432"]
-                options: >-
-                    --health-cmd "pg_isready -U parseiq"
-                    --health-interval 5s
-                    --health-timeout 5s
-                    --health-retries 10
-
+    services:
+      postgres:
+        image: postgres:16-alpine
         env:
-            DB_HOST: localhost
-            DB_PORT: "5432"
-            DB_USER: parseiq
-            DB_PASSWORD: parseiq_pw
-            DB_NAME: parseiq_test
-            HF_TOKEN: test-token-never-used
+          POSTGRES_USER: parseiq
+          POSTGRES_PASSWORD: parseiq_pw
+          POSTGRES_DB: parseiq_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U parseiq"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
-        steps:
-            - uses: actions/checkout@v4
+    env:
+      DATABASE_URL: postgresql+psycopg://parseiq:parseiq_pw@localhost:5432/parseiq_test
 
-            - uses: actions/setup-python@v5
-              with:
-                  python-version: "3.13"
-                  cache: pip
-                  cache-dependency-path: api/requirements*.txt
+    steps:
+      - uses: actions/checkout@v4
 
-            - name: Install CPU-only torch
-              run: pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+      # Installs uv
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.3"
+          enable-cache: true
+          cache-dependency-glob: api/uv.lock
 
-            - name: Install dependencies
-              run: pip install -r requirements-dev.txt
+      - name: Install dependencies
+        run: uv sync --locked
 
-            - name: Lint
-              run: |
-                  ruff check app tests
-                  black --check app tests
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run black --check .
 
-            # Runs the real migrations, so a broken migration fails CI too
-            - name: Apply migrations
-              run: alembic upgrade head
+      - name: Apply migrations
+        run: uv run alembic upgrade head
 
-            # Cache Hugging Face models to avoid downloading every time
-            - name: Cache Hugging Face models
-              uses: actions/cache@v4
-              with:
-                  path: ~/.cache/huggingface
-                  key: hf-${{ hashFiles('api/app/services/embeddings.py', 'api/app/services/reranker.py') }}
+      # Fails if models.py changed without a matching migration
+      - name: Check models match migrations
+        run: uv run alembic check
 
-            - name: Run tests
-              run: pytest
-              env:
-                RAG_EVAL_REPORT_DIR: ${{ github.workspace }}/eval-reports
+      # Cache Hugging Face models to avoid downloading every time
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ hashFiles('api/app/services/embeddings.py', 'api/app/services/reranker.py') }}
 
-            - name: Post retrieval eval report to the run summary
-              if: always()
-              run: cat "$GITHUB_WORKSPACE/eval-reports/retrieval.md" >> "$GITHUB_STEP_SUMMARY" || echo "No report generated"
+      - name: Run tests
+        run: uv run pytest
+        env:
+          RAG_EVAL_REPORT_DIR: ${{ github.workspace }}/eval-reports
+
+      - name: Post retrieval eval report to the run summary
+        if: always()
+        run: cat "$GITHUB_WORKSPACE/eval-reports/retrieval.md" >> "$GITHUB_STEP_SUMMARY" || echo "No report generated"
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

@@ -1,14 +1,60 @@
+# --- UV ---
+[project]
+name = "parseiq-api"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.16.5",
+    "faiss-cpu>=1.12.0",
+    "fastapi>=0.116.2",
+    "huggingface-hub>=0.35.3",
+    "numpy>=2.3.3",
+    "pillow>=11.3.0",
+    "psycopg[binary]>=3.2.10",
+    "pydantic>=2.11.9",
+    "pydantic-settings>=2.16.2",
+    "pypdf>=6.21.1",
+    "pytesseract>=0.3.13",
+    "python-multipart>=0.0.20",
+    "sentence-transformers>=5.1.1",
+    "sqlalchemy>=2.0.43",
+    "sqlmodel>=0.0.25",
+    "torch==2.8.0",
+    "uvicorn[standard]>=0.35.0",
+]
+
+[dependency-groups]
+dev = [
+    "black>=26.5.1",
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "ruff>=0.15.20",
+    "transformers>=4.57.1,<4.58",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true # only packages that name this index use it
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+
+# --- Black ---
 [tool.black]
 line-length = 100
 target-version = ["py313"]
+# Alembic revision files are historical artifacts
+extend-exclude = "migration/versions"
 
 
+# --- Ruff ---
 [tool.ruff]
 line-length = 100
 target-version = "py313"
 # Alembic-generated revision files are historical artifacts; don't reformat them.
 exclude = ["migration/versions"]
-
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
@@ -18,10 +64,8 @@ ignore = [
     "UP042",
 ]
 
-
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
-
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's dependency-injection idiom (Depends/Body/Query/File in defaults) is
@@ -29,6 +73,7 @@ known-first-party = ["app"]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.Body", "fastapi.Query", "fastapi.File", "fastapi.Path"]
 
 
+# --- Pytest ---
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

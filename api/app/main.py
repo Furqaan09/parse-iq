@@ -1,13 +1,11 @@
 import logging
-from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import APIRouter, FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.routes.chat import router as chat_router
+from app.routes.ask import router as ask_router
 from app.routes.documents import router as documents_router
-from app.routes.search import router as search_router
+from app.settings import STATIC_DIR, STORAGE_DIR
 
 # ------------------------
 # Logging configuration
@@ -22,20 +20,15 @@ logging.basicConfig(
 # -----------------------
 app = FastAPI(title="ParseIQ API", version="0.1.0")
 
-# CORS configuration: Allow browser frontend to call API
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Vite default port
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+# ------------------------------------
+# All JSON endpoints live under /api
+# ------------------------------------
+api = APIRouter(prefix="/api")
 
 
-# ----------------------------------------------
 # Sample endpoint to verify the API is working
-# ----------------------------------------------
-@app.get("/status")
+@api.get("/status")
 def get_status():
     return {"status": "API is running"}
 
@@ -43,16 +36,21 @@ def get_status():
 # ----------------------
 # Include all routers
 # ----------------------
-app.include_router(documents_router)
-app.include_router(search_router)
-app.include_router(chat_router)
+api.include_router(documents_router)
+api.include_router(ask_router)
+app.include_router(api)
 
 
-# ---------------------------------
-# Static mount for uploaded files
-# ---------------------------------
-UPLOADS_DIR = Path(__file__).resolve().parents[1] / "storage" / "uploads"
+# -----------------------------------------------
+# Upload files at /files/<YYYY>/<MM>/<filename>
+# -----------------------------------------------
+UPLOADS_DIR = STORAGE_DIR / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-
-# Files will be accessible at /files/<YYYY>/<MM>/<filename>
 app.mount("/files", StaticFiles(directory=UPLOADS_DIR), name="files")
+
+
+# --------------------------------------
+# Mount the built React app in the end
+# --------------------------------------
+if STATIC_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")

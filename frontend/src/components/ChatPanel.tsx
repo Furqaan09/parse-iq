@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { askChat, type ChatCitation } from "../lib/api"
+import { askChat, type ChatCitation, errorMessage } from "../lib/api"
 
 type ChatMessage =
     | {
@@ -48,8 +48,8 @@ export default function ChatPanel() {
             }
 
             setMessages((prev) => [...prev, assistantMessage])
-        } catch (err: any) {
-            setError(err?.message ?? "Something went wrong while asking the assistant.")
+        } catch (err) {
+            setError(errorMessage(err, "Something went wrong while asking the assistant."))
         } finally {
             setIsLoading(false)
         }

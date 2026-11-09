@@ -21,7 +21,9 @@ Note: Students must achieve at least 50% on the final exam to pass the course.
 
 
 def upload(client, name="syllabus.txt", content=SYLLABUS):
-    return client.post("/documents/upload", files={"file": (name, content.encode(), "text/plain")})
+    return client.post(
+        "/api/documents/upload", files={"file": (name, content.encode(), "text/plain")}
+    )
 
 
 def test_upload_chunks_and_embeds_document(client):
@@ -47,16 +49,16 @@ def test_upload_cannot_write_outside_storage(client):
 def test_list_and_get_document(client):
     doc_id = upload(client).json()["id"]
 
-    listed = client.get("/documents").json()
+    listed = client.get("/api/documents").json()
     assert listed["total"] == 1
     assert listed["items"][0]["id"] == doc_id
 
-    doc = client.get(f"/documents/{doc_id}").json()
+    doc = client.get(f"/api/documents/{doc_id}").json()
     assert doc["file_url"].startswith("/files/")
 
 
 def test_get_missing_document_returns_404(client):
-    assert client.get("/documents/999").status_code == 404
+    assert client.get("/api/documents/999").status_code == 404
 
 
 def test_chunks_fit_embedding_model_token_limit(client, engine):
@@ -86,7 +88,7 @@ def test_chat_retrieves_relevant_chunk_and_validates_citations(client, fake_llm)
     upload(client)
     fake_llm.answer = "The study break is Feb. 16-20 [1]. See also the handbook [9]."
 
-    res = client.post("/chat/ask", json={"message": "When is the study break?"})
+    res = client.post("/api/ask", json={"message": "When is the study break?"})
 
     assert res.status_code == 200
     body = res.json()
@@ -103,8 +105,26 @@ def test_chat_retrieves_relevant_chunk_and_validates_citations(client, fake_llm)
 
 
 def test_chat_with_no_documents_does_not_call_llm(client, fake_llm):
-    res = client.post("/chat/ask", json={"message": "When is the study break?"})
+    res = client.post("/api/ask", json={"message": "When is the study break?"})
 
     assert res.status_code == 200
     assert res.json()["citations"] == []
     assert fake_llm.calls == []
+
+
+def test_reindex_rebuilds_index_without_stale_vectors(client, engine):
+    from sqlmodel import Session
+
+    from app.ingestion.indexing import reindex_all
+    from app.services import faiss_index
+
+    upload(client)  # adds N vectors
+
+    with Session(engine) as session:
+        summary = reindex_all(session)
+
+    assert summary["documents"] == 1
+    assert summary["failed"] == []
+    assert summary["embedded"] == summary["chunks"] > 0
+    # Check if it's Rebuilt and not Appended
+    assert faiss_index.load_or_new("text").ntotal == summary["embedded"]

@@ -5,18 +5,16 @@ import tailwindcss from '@tailwindcss/vite'
 // https://vite.dev/config/
 export default defineConfig({
     plugins: [react(), tailwindcss()],
+    build: {
+        // FastAPI serves the built app from api/static
+        outDir: '../api/static',
+        emptyOutDir: true,
+    },
     server: {
+        // Dev only: forward API and file requests to uvicorn
         proxy: {
-            // Proxy API and file requests to the backend server
-            '/api': {
-                target: 'http://localhost:8000',
-                changeOrigin: true,
-                rewrite: (path) => path.replace(/^\/api/, ''),
-            },
-            '/files': {
-                target: 'http://localhost:8000',
-                changeOrigin: true,
-            },
+            '/api': 'http://localhost:8000',
+            '/files': 'http://localhost:8000',
         },
     },
 })

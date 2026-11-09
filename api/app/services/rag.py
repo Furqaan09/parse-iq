@@ -1,6 +1,5 @@
 import logging
 import re
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -12,6 +11,7 @@ from app.services.faiss_index import load_or_new
 from app.services.faiss_index import search as faiss_search
 from app.services.llm_provider import generate_with_llm
 from app.services.reranker import rerank
+from app.settings import API_DIR, STORAGE_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +29,9 @@ def _file_url_from_storage_path(storage_path: str) -> str | None:
     Only if path exists under uploads.
     """
     try:
-        base = Path(__file__).resolve().parents[2]  # api/
+        base = API_DIR
         abs_path = (base / storage_path).resolve()
-        uploads_root = (base / "storage" / "uploads").resolve()
+        uploads_root = STORAGE_DIR / "uploads"
         rel = abs_path.relative_to(uploads_root)
         return f"/files/{rel.as_posix()}"
     except Exception:
@@ -41,7 +41,7 @@ def _file_url_from_storage_path(storage_path: str) -> str | None:
 # -------------------------------
 # Function to get ranked chunks
 # -------------------------------
-def _ranked_chunks_by_ids(session: Session, ids: np.ndarray, scores: np.ndarray) -> list[Chunk]:
+def _ranked_chunks_by_ids(session: Session, ids: np.ndarray) -> list[Chunk]:
     id_list = [int(i) for i in ids if int(i) != -1]
     if not id_list:
         return []
@@ -163,7 +163,7 @@ def retrieve_chunks(
     if not candidate_ids:
         return []
 
-    chunks = _ranked_chunks_by_ids(session, np.array(candidate_ids, dtype=np.int64), scores)
+    chunks = _ranked_chunks_by_ids(session, np.array(candidate_ids, dtype=np.int64))
 
     # Filter by allowed document IDs if provided
     if restrict_doc_ids:

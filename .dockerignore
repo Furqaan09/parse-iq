@@ -1,0 +1,19 @@
+# The build context is the whole repo: send only what the image needs
+.git
+.github
+context_files
+*.md
+
+**/.env
+
+**/__pycache__
+**/.venv
+**/node_modules
+**/.pytest_cache
+**/.ruff_cache
+
+frontend/dist
+api/static
+api/storage
+api/tests
+api/rag_eval

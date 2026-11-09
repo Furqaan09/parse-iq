@@ -4,13 +4,14 @@ from typing import Literal
 import faiss
 import numpy as np
 
+from app.settings import STORAGE_DIR
+
 IndexModality = Literal["text"]
 
 # --------------------------------------------------------
 # Ensure the FAISS storage directory exists or create it
 # --------------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parents[2]  # /api/
-FAISS_DIR = BASE_DIR / "storage" / "faiss"
+FAISS_DIR = STORAGE_DIR / "faiss"
 FAISS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ----------------------------------------------

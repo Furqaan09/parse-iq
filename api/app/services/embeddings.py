@@ -1,14 +1,14 @@
+import logging
+
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from app.core.device import get_torch_device
+logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------
-# Singleton instances for models to avoid reloading
-# ---------------------------------------------------
+# -------------------------------------------------
+# Singleton instance for model to avoid reloading
+# -------------------------------------------------
 _TEXT_MODEL: SentenceTransformer | None = None
-
-device = get_torch_device()
 
 
 # ------------------------------------------
@@ -17,9 +17,8 @@ device = get_torch_device()
 def get_text_model() -> SentenceTransformer:
     global _TEXT_MODEL
     if _TEXT_MODEL is None:
-        _TEXT_MODEL = SentenceTransformer(
-            "sentence-transformers/all-MiniLM-L6-v2", device=str(device)
-        )
+        logger.info("Loading text embedding model...")
+        _TEXT_MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
     return _TEXT_MODEL
 
 
@@ -35,7 +34,6 @@ def _l2_normalize(mat: np.ndarray) -> np.ndarray:
 def embed_texts(texts: list[str], batch_size: int = 64) -> np.ndarray:
     """Generate L2-normalized text embeddings."""
     model = get_text_model()
-    model.to(device)
 
     embeddings = model.encode(
         texts,

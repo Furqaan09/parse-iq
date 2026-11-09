@@ -2,13 +2,10 @@ import os
 import shutil
 from contextlib import contextmanager
 
-os.environ.setdefault("DB_HOST", "localhost")
-os.environ.setdefault("DB_PORT", "5433")
-os.environ.setdefault("DB_USER", "parseiq")
-os.environ.setdefault("DB_PASSWORD", "parseiq_pw")
-os.environ.setdefault("DB_NAME", "parseiq_test")
-os.environ.setdefault("HF_TOKEN", "test-token-never-used")  # the LLM is always mocked
-os.environ.setdefault("OMP_NUM_THREADS", "1")
+# Set before the app is imported, so app.settings sees the test database
+os.environ.setdefault(
+    "DATABASE_URL", "postgresql+psycopg://parseiq:parseiq_pw@localhost:5433/parseiq_test"
+)
 
 import pytest  # noqa: E402
 
@@ -16,15 +13,16 @@ import pytest  # noqa: E402
 @pytest.fixture(scope="session")
 def engine():
     # Safety guard: Only test against the test DB, not real one
-    if not os.environ["DB_NAME"].endswith("_test"):
-        pytest.exit(
-            f"Refusing to run against DB_NAME={os.environ['DB_NAME']!r}; it must end in _test"
-        )
+    from sqlalchemy.engine import make_url
+
+    db_name = make_url(os.environ["DATABASE_URL"]).database or ""
+    if not db_name.endswith("_test"):
+        pytest.exit(f"Refusing to run against database {db_name!r}; it must end in _test")
 
     from sqlmodel import SQLModel
 
     import app.models  # noqa: F401
-    from app.core.database import engine
+    from app.db import engine
 
     SQLModel.metadata.create_all(engine)
     return engine
@@ -44,9 +42,7 @@ def isolated_client(engine, faiss_dir):
     from app.main import app
 
     with engine.begin() as conn:
-        conn.execute(
-            text("TRUNCATE documents, chunks, kv_extractions, tasks RESTART IDENTITY CASCADE")
-        )
+        conn.execute(text("TRUNCATE documents, chunks RESTART IDENTITY CASCADE"))
 
     upload_root = documents.STORAGE_ROOT / "_pytest"
     with pytest.MonkeyPatch.context() as mp:
@@ -79,7 +75,8 @@ def eval_corpus(engine, tmp_path_factory):
         filenames_by_id = {}
         for path in sorted(CORPUS_DIR.glob("*.txt")):
             res = test_client.post(
-                "/documents/upload", files={"file": (path.name, path.read_bytes(), "text/plain")}
+                "/api/documents/upload",
+                files={"file": (path.name, path.read_bytes(), "text/plain")},
             )
             assert res.status_code == 200, res.text
             assert "processing_error" not in res.json()["processing"], res.json()

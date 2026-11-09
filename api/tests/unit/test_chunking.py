@@ -1,6 +1,6 @@
 import pytest
 
-from app.services.chunking import (
+from app.ingestion.chunking import (
     CHUNK_TARGET_CHARS,
     _is_heading,
     _lines_from_text,
