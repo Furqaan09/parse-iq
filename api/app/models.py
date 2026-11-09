@@ -8,12 +8,6 @@ from sqlmodel import Field, Relationship, SQLModel
 # ----------------------
 # Enums (SQL friendly)
 # ----------------------
-class SourceType(str, Enum):
-    upload = "upload"
-    url = "url"
-    email = "email"
-
-
 class MediaType(str, Enum):
     pdf = "pdf"
     image = "image"
