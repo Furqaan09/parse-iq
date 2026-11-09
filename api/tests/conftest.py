@@ -6,7 +6,6 @@ from contextlib import contextmanager
 os.environ.setdefault(
     "DATABASE_URL", "postgresql+psycopg://parseiq:parseiq_pw@localhost:5433/parseiq_test"
 )
-os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 import pytest  # noqa: E402
 

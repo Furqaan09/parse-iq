@@ -2,7 +2,7 @@
 
 Revision ID: 0001
 Revises: 
-Create Date: 2026-11-07 22:26:28.963362
+Create Date: 2026-11-09 00:14:40.471112
 
 """
 from typing import Sequence, Union
@@ -25,11 +25,9 @@ def upgrade() -> None:
     op.create_table('documents',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('title', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('source_type', sa.Enum('upload', 'url', 'email', name='sourcetype'), nullable=False),
     sa.Column('media_type', sa.Enum('pdf', 'image', 'text', name='mediatype'), nullable=False),
     sa.Column('storage_path', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('pages', sa.Integer(), nullable=True),
-    sa.Column('meta_json', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
@@ -59,5 +57,4 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_documents_title'), table_name='documents')
     op.drop_table('documents')
     sa.Enum(name="mediatype").drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name="sourcetype").drop(op.get_bind(), checkfirst=True)
     # ### end Alembic commands ###

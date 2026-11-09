@@ -27,11 +27,9 @@ class Document(SQLModel, table=True):
     __tablename__ = "documents"
     id: int | None = Field(default=None, primary_key=True)
     title: str = Field(index=True)
-    source_type: SourceType = Field(default=SourceType.upload)
     media_type: MediaType = Field(default=MediaType.pdf)
     storage_path: str
     pages: int | None = Field(default=None)
-    meta_json: str | None = Field(default=None)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         sa_type=DateTime(timezone=True),

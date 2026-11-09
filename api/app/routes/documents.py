@@ -125,11 +125,9 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
     # Insert document record in DB
     doc = Document(
         title=title,
-        source_type="upload",
         media_type=media_type,
         storage_path=str(dest_path.relative_to(API_DIR)),
         pages=pages,
-        meta_json=None,
     )
     session.add(doc)
     session.commit()

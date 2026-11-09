@@ -41,7 +41,7 @@ def _file_url_from_storage_path(storage_path: str) -> str | None:
 # -------------------------------
 # Function to get ranked chunks
 # -------------------------------
-def _ranked_chunks_by_ids(session: Session, ids: np.ndarray, scores: np.ndarray) -> list[Chunk]:
+def _ranked_chunks_by_ids(session: Session, ids: np.ndarray) -> list[Chunk]:
     id_list = [int(i) for i in ids if int(i) != -1]
     if not id_list:
         return []
@@ -163,7 +163,7 @@ def retrieve_chunks(
     if not candidate_ids:
         return []
 
-    chunks = _ranked_chunks_by_ids(session, np.array(candidate_ids, dtype=np.int64), scores)
+    chunks = _ranked_chunks_by_ids(session, np.array(candidate_ids, dtype=np.int64))
 
     # Filter by allowed document IDs if provided
     if restrict_doc_ids:
