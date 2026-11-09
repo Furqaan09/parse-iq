@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { listDocuments, type DocumentItem, getDocument } from "../lib/api"
+import { listDocuments, type DocumentItem, getDocument, errorMessage } from "../lib/api"
 
 export default function DocumentList() {
     const [items, setItems] = useState<DocumentItem[]>([])
@@ -20,8 +20,8 @@ export default function DocumentList() {
             setTotal(data.total)
             setHasNext(data.has_next)
             setPage(p)
-        } catch (e: any) {
-            setError(e?.message ?? "Failed to load documents")
+        } catch (e) {
+            setError(errorMessage(e, "Failed to load documents"))
         } finally {
             setLoading(false)
         }
@@ -39,8 +39,8 @@ export default function DocumentList() {
 
             // Open in a new tab (served by FastAPI static mount)
             window.open(doc.file_url, "_blank", "noopener,noreferrer")
-        } catch (e: any) {
-            alert(e?.message ?? "Failed to open document")
+        } catch (e) {
+            alert(errorMessage(e, "Failed to open document"))
         }
     }
 

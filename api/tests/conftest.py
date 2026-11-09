@@ -76,7 +76,8 @@ def eval_corpus(engine, tmp_path_factory):
         filenames_by_id = {}
         for path in sorted(CORPUS_DIR.glob("*.txt")):
             res = test_client.post(
-                "/documents/upload", files={"file": (path.name, path.read_bytes(), "text/plain")}
+                "/api/documents/upload",
+                files={"file": (path.name, path.read_bytes(), "text/plain")},
             )
             assert res.status_code == 200, res.text
             assert "processing_error" not in res.json()["processing"], res.json()

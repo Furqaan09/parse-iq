@@ -8,6 +8,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # -----------------
 API_DIR = Path(__file__).resolve().parents[1]
 STORAGE_DIR = API_DIR / "storage"
+STATIC_DIR = API_DIR / "static"  # built React app
+
 ENV_FILE = API_DIR / ".env"
 
 

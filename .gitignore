@@ -45,3 +45,6 @@ api/storage/
 # Planning and Reports
 PLAN.md
 api/rag_eval/reports/
+
+# Built frontend
+api/static/

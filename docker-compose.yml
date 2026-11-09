@@ -15,9 +15,9 @@ services:
       timeout: 5s
       retries: 5
 
-  api:
-    image: parseiq-api:latest
-    build: ./api
+  app:
+    image: parse-iq:latest
+    build: .
     env_file:
       - ./api/.env
     environment:
@@ -28,15 +28,8 @@ services:
       db:
         condition: service_healthy
     volumes:
+      # Uploads and FAISS index
       - ./api/storage:/app/storage
-
-  frontend:
-    image: parseiq-frontend:latest
-    build: ./frontend
-    ports:
-      - "3000:80"
-    depends_on:
-      - api
 
 volumes:
   pgdata:

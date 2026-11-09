@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { uploadDocument, type UploadResponse } from "../lib/api"
+import { uploadDocument, type UploadResponse, errorMessage } from "../lib/api"
 
 export default function UploadBox() {
     const inputRef = useRef<HTMLInputElement | null>(null)
@@ -25,8 +25,8 @@ export default function UploadBox() {
             setIsUploading(true)
             const data = await uploadDocument(file)
             setResult(data)
-        } catch (e: any) {
-            setError(e?.message ?? "Upload failed")
+        } catch (e) {
+            setError(errorMessage(e, "Upload failed"))
         } finally {
             setIsUploading(false)
         }

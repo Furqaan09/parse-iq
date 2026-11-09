@@ -134,7 +134,7 @@ export async function askChat(params: {
     top_k?: number
     document_ids?: number[]
 }): Promise<ChatAskResponse> {
-    const res = await fetch("/api/chat/ask", {
+    const res = await fetch("/api/ask", {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -152,4 +152,11 @@ export async function askChat(params: {
     }
 
     return res.json()
+}
+
+// ---------------------------------------------------
+// Readable message from anything a catch block gets
+// ---------------------------------------------------
+export function errorMessage(e: unknown, fallback: string): string {
+    return e instanceof Error ? e.message : fallback
 }
