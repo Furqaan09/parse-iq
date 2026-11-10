@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     hf_token: SecretStr | None = None
     hf_llm_model: str = "Qwen/Qwen2.5-14B-Instruct-1M"
     hf_llm_provider: str = "auto"
+    openai_api_key: SecretStr | None = None
+    embedding_model: str = "text-embedding-3-small"
 
 
 # Create a single instance at import
