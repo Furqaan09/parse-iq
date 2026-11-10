@@ -14,7 +14,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_USER: parseiq
           POSTGRES_PASSWORD: parseiq_pw

@@ -19,10 +19,15 @@ def engine():
     if not db_name.endswith("_test"):
         pytest.exit(f"Refusing to run against database {db_name!r}; it must end in _test")
 
+    from sqlalchemy import text
     from sqlmodel import SQLModel
 
     import app.models  # noqa: F401
     from app.db import engine
+
+    # create_all can't create a vector column until the extension exists
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
     SQLModel.metadata.create_all(engine)
     return engine
