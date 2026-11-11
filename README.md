@@ -27,8 +27,8 @@ come only from your documents, with citations back to the source page.
 ## Project structure
 
 ```
-Dockerfile           # one image: builds React, then the Python app
-docker-compose.yml   # db + app
+Dockerfile           # one image: builds React, then the Python app (reranker model baked in)
+docker-compose.yml   # db (Postgres + pgvector) + app
 api/
   app/
     main.py          # FastAPI app: /api routes, /files, the React build at /
@@ -36,13 +36,14 @@ api/
     db.py            # database engine and session
     models.py        # SQLModel tables: Document, Chunk
     cli.py           # admin commands (reindex)
+    openai_client.py # one shared OpenAI client
     routes/          # HTTP only: documents, ask
-    ingestion/       # file -> text -> chunks -> vectors
-    services/        # embeddings, FAISS index, reranker, RAG pipeline, LLM client
+    ingestion/       # file -> text -> chunks -> embeddings
+    retrieval/       # embeddings, hybrid search + RRF, reranker, answers with citations
   migration/         # Alembic migrations
-  rag_eval/          # retrieval and answer evaluation harness
+  rag_eval/          # golden questions, test corpus and evaluation harness
   tests/             # unit, integration and eval tests
-  storage/           # uploaded files and the FAISS index (gitignored)
+  storage/           # uploaded files (gitignored)
 frontend/
   src/
     components/      # UploadBox, DocumentList, ChatPanel
@@ -157,4 +158,4 @@ cd api
 uv run python -m app.cli reindex
 ```
 
-This re-chunks every document and rebuilds the FAISS index from the database.
+This re-chunks and re-embeds every document. Vectors are stored on the chunk rows, so nothing else needs rebuilding.
