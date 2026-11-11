@@ -27,13 +27,13 @@ CONTEXT_SIZE = 6  # chunks rag_answer() hands to the LLM
 CANDIDATE_POOL = max(CONTEXT_SIZE * 4, 20)  # chunks each search leg returns
 
 
-# They exist to catch changes that make retrieval worse. When a change makes it
-# better, raise them so the improvement can't quietly slip back.
-MIN_HIT_AT_6 = 0.95
-MIN_HIT_AT_3 = 0.875
-MIN_MRR = 0.70
+# Baseline set from running jina-reranker-v1-turbo on 35 answerable questions
+# About one question below each measured value to account for noise
+MIN_HIT_AT_6 = 0.97  # measured 100% (35/35)
+MIN_HIT_AT_3 = 0.94  # measured 97% (34/35)
+MIN_MRR = 0.85  # measured 0.89
 MIN_POOL_RECALL = 0.95
-MIN_CATEGORY_HIT_AT_6 = 0.75  # smallest real category has 4 questions: 3 of 4
+MIN_CATEGORY_HIT_AT_6 = 0.75  # 1-10 questions per category; 1-question category must be perfect
 
 
 @pytest.fixture(scope="module")
@@ -102,7 +102,6 @@ def test_candidate_pool_contains_the_answer(runs):
     assert pool[f"hit@{CANDIDATE_POOL}"] >= MIN_POOL_RECALL
 
 
-@pytest.mark.xfail(reason="OpenAI vector order beats the reranker on this 22-chunk corpus")
 def test_reranking_is_at_least_as_good_as_dense_only(runs):
     dense = summarize_retrieval(runs["vector"])["mrr"]
     reranked = summarize_retrieval(runs["hybrid+rerank"])["mrr"]

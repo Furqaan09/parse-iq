@@ -4,7 +4,7 @@ from fastembed.rerank.cross_encoder import TextCrossEncoder
 
 from app.models import Chunk
 
-RERANK_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
+RERANK_MODEL = "jinaai/jina-reranker-v1-turbo-en"
 
 
 # -----------------------------------

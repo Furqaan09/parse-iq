@@ -49,6 +49,45 @@ frontend/
     lib/api.ts       # typed fetch wrappers for the backend API
 ```
 
+## Evaluation
+
+Measured on 43 labelled questions (35 answerable, 8 unanswerable) over 10 documents:
+course syllabi, a co-op offer, a TA email, and a small finance library (supply agreement,
+price amendment, AP policy, backorder and bank-change emails, and a look-alike quote).
+
+### Retrieval
+
+| Setup | Hit@1 | Hit@3 | Hit@6 | MRR |
+|---|---|---|---|---|
+| Vector (`text-embedding-3-small`, pgvector) | 71% | 97% | 100% | 0.84 |
+| Keyword (Postgres full-text) | 49% | 80% | 91% | 0.65 |
+| Hybrid (RRF) | 63% | 97% | 97% | 0.79 |
+| Hybrid + `ms-marco-MiniLM-L-6` reranker | 69% | 89% | 100% | 0.81 |
+| **Hybrid + `jina-reranker-v1-turbo`** | **80%** | **97%** | **100%** | **0.89** |
+
+- Switching embeddings from local MiniLM to `text-embedding-3-small` raised vector MRR from
+  0.75 to 0.82 on the original 24 questions.
+- Five ONNX rerankers were compared with a rule fixed before the runs: switch only for
+  +0.05 MRR without losing Hit@6. `bge-reranker-base` reached 0.88 but dropped a question
+  from the top 6 and is 7x larger.
+
+### Answers
+
+| Metric | Value |
+|---|---|
+| Answer accuracy | 100% |
+| Citation precision | 100% |
+| Refusal accuracy (8 unanswerable) | 100% |
+
+Refusal is handled by the LLM plus citation validation.
+
+### Limitations
+
+- A small corpus (38 chunks): each search leg returns up to 24, so the reranker sees most of it.
+- The reranker was chosen on the same questions it is scored on, so these numbers are optimistic.
+- Synthetic documents: the numbers compare setups and catch regressions; they don't
+  predict accuracy on real company files.
+
 ## Getting started
 
 You need Docker for Postgres, and an OpenAI API key.
