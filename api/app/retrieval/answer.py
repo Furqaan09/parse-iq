@@ -1,13 +1,14 @@
 import logging
 import re
+import textwrap
 from typing import Any
 
 from sqlmodel import Session, select
 
 from app.models import Chunk, Document
+from app.openai_client import openai_client
 from app.retrieval.search import search
-from app.services.llm_provider import generate_with_llm
-from app.settings import API_DIR, STORAGE_DIR
+from app.settings import API_DIR, STORAGE_DIR, settings
 
 logger = logging.getLogger(__name__)
 
@@ -36,26 +37,24 @@ def _file_url_from_storage_path(storage_path: str) -> str | None:
 # --------------------------------------------------------------
 # Function to build the context and generate citations for llm
 # --------------------------------------------------------------
-def _build_context_and_citations(session: Session, chunks: list[Chunk], max_chars: int = 4500):
+def _build_context_and_citations(session: Session, chunks: list[Chunk]):
     # fetch docs
     doc_ids = list({c.document_id for c in chunks})
     docs = {d.id: d for d in session.exec(select(Document).where(Document.id.in_(doc_ids))).all()}
 
     context_parts = []
     citations = []
-    total = 0
     idx = 1
 
     for c in chunks:
         d = docs.get(c.document_id)
         if not d:
             continue
+
         snippet = (c.content_text or "").strip()
         if not snippet:
             continue
-        # budget context size
-        if total + len(snippet) > max_chars and len(context_parts) > 0:
-            break
+
         file_url = _file_url_from_storage_path(d.storage_path) if d.storage_path else None
 
         context_parts.append(f"[{idx}] {d.title} (p.{c.page or 1})\n{snippet}\n")
@@ -69,7 +68,6 @@ def _build_context_and_citations(session: Session, chunks: list[Chunk], max_char
                 "snippet": snippet[:220],
             }
         )
-        total += len(snippet)
         idx += 1
 
     context = "\n".join(context_parts)
@@ -111,6 +109,22 @@ def _validate_citations(answer: str, citations: list[dict]) -> tuple[str, list[d
     return cleaned_answer, filtered_citations
 
 
+# --------------------------------------
+# Function to generate answer with LLM
+# --------------------------------------
+def generate_with_llm(system_prompt: str, user_prompt: str) -> str:
+    completion = openai_client().chat.completions.create(
+        model=settings.llm_model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_completion_tokens=300,
+        reasoning_effort="none",
+    )
+    return (completion.choices[0].message.content or "").strip()
+
+
 # ---------------------------------
 # Function to generate RAG answer
 # ---------------------------------
@@ -120,34 +134,39 @@ def rag_answer(
     # 1) retrieve the most relevant chunks
     chunks = search(session, query, document_ids=restrict_doc_ids, top_k=top_k)
     if not chunks:
-        return {
-            "answer": "I could not find relevant information for that question in the indexed documents.",
-            "citations": [],
-        }
+        return {"answer": REFUSAL_MESSAGE, "citations": []}
 
     # 2) build context and citations
-    context, citations = _build_context_and_citations(session, chunks, max_chars=4500)
+    context, citations = _build_context_and_citations(session, chunks)
 
     logger.debug("RAG: retrieval complete, building prompt (%d citations)", len(citations))
     logger.debug("RAG: calling generator...")
 
     # 3) craft grounded prompt
-    system = (
-        "You are ParseIQ's document assistant.\n"
-        "Answer ONLY from the provided CONTEXT.\n"
-        "If the CONTEXT does not contain the answer, reply exactly:\n"
-        f'"{REFUSAL_MESSAGE}"\n'
-        "Do not use outside knowledge.\n"
-        "Do not guess.\n"
-        "Cite sources in brackets like [1], [2] only when the answer is supported by context."
-    )
-    user = (
-        f"QUESTION:\n{query}\n\nCONTEXT:\n{context}\n\nINSTRUCTIONS:\n"
-        f"- Use only the CONTEXT. Do not invent facts.\n"
-        f"- Include bracketed citations [n] aligned to the context items.\n"
-    )
+    system = textwrap.dedent(f"""\
+        You are ParseIQ's document assistant.
 
-    # 4) generate with the local HF model
+        - Answer ONLY from the provided CONTEXT.
+        - If the CONTEXT does not contain the answer, reply exactly:
+        {REFUSAL_MESSAGE}
+        - Do NOT use outside knowledge.
+        - Do NOT guess.
+        - Cite sources in brackets like [1], [2] only when the answer is supported by context.
+        """)
+
+    user = textwrap.dedent(f"""\
+        QUESTION:
+        {query}
+
+        CONTEXT:
+        {context}
+
+        INSTRUCTIONS:
+        - Use only the CONTEXT. Do NOT invent facts.
+        - Include bracketed citations [n] aligned to the context items.
+        """)
+
+    # 4) generate with the LLM
     answer = generate_with_llm(system, user)
 
     # 5) verify [n] citations against what was actually retrieved

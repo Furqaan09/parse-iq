@@ -107,5 +107,5 @@ def fake_llm(monkeypatch):
 
     fake = FakeLLM()
     fake.calls = []
-    monkeypatch.setattr("app.services.rag.generate_with_llm", fake)
+    monkeypatch.setattr("app.retrieval.answer.generate_with_llm", fake)
     return fake

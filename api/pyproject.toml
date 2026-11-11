@@ -7,7 +7,6 @@ dependencies = [
     "alembic>=1.16.5",
     "fastapi>=0.116.2",
     "fastembed>=0.9.1",
-    "huggingface-hub>=0.35.3",
     "openai>=3.48.0",
     "pgvector>=0.5.1",
     "pillow>=11.3.0",
@@ -70,7 +69,7 @@ pythonpath = ["."]
 markers = [
     "integration: needs Postgres and OPENAI_API_KEY; downloads the reranker model",
     "eval: scores retrieval/answer quality against the golden set in rag_eval/",
-    "llm: calls the real hosted LLM (costs money, needs HF_TOKEN); skipped by default",
+    "llm: calls the real hosted LLM (costs money, needs OPENAI_API_KEY); skipped by default",
 ]
 # Never call the paid LLM unless asked for explicitly with `pytest -m llm`.
 addopts = "-m 'not llm'"

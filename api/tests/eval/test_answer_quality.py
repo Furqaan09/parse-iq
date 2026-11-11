@@ -2,13 +2,14 @@
 End-to-end answer quality, through the REAL hosted LLM. Not run in CI
 
 Skipped by default (see addopts in pyproject.toml). Run on demand with:
-    pytest -m llm       (needs HF_TOKEN in the environment or api/.env)
+pytest -m llm      (needs OPENAI_API_KEY in the environment or api/.env)
 """
 
 import os
 from pathlib import Path
 
 import pytest
+from openai import APIConnectionError, InternalServerError, RateLimitError
 from sqlmodel import Session
 
 from rag_eval.harness import (
@@ -34,11 +35,11 @@ MAX_ERROR_RATE = 0.30  # provider error
 @pytest.fixture(scope="module")
 def answers(engine, eval_corpus) -> list[AnswerResult]:
     """Every golden question (answerable and not) through the full RAG pipeline."""
-    from app.services.rag import rag_answer
+    from app.retrieval.answer import rag_answer
     from app.settings import settings
 
-    if settings.hf_token is None:
-        pytest.skip("needs HF_TOKEN in the environment or api/.env")
+    if settings.openai_api_key is None:
+        pytest.skip("needs OPENAI_API_KEY in the environment or api/.env")
 
     # Run for all questions and collect all results
     results = []
@@ -46,7 +47,11 @@ def answers(engine, eval_corpus) -> list[AnswerResult]:
         for question in GOLDEN:
             try:
                 response = rag_answer(session, question.question)
-            except Exception as exc:  # provider outage: reported, never scored as wrong
+            except (
+                APIConnectionError,
+                RateLimitError,
+                InternalServerError,
+            ) as exc:  # outage is reported
                 results.append(AnswerResult(question, error=f"{type(exc).__name__}: {exc}"[:150]))
                 continue
 

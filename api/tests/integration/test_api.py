@@ -179,3 +179,21 @@ def test_keyword_search_with_only_stop_words_returns_nothing(client, engine):
 
     with Session(engine) as session:
         assert keyword_search(session, "what is it?") == []
+
+
+def test_context_keeps_all_six_chunks_of_a_long_document(client, fake_llm):
+    long_section = "Course Policies\n" + "\n".join(
+        f"Policy {i}: students must read the full policy document before week {i}."
+        for i in range(120)
+    )
+    upload(client, name="policies.txt", content=long_section)
+
+    client.post("/api/ask", json={"message": "What must students read?", "top_k": 6})
+
+    _, prompt = fake_llm.calls[0]
+    assert "[6]" in prompt
+
+
+def test_ask_rejects_an_oversized_top_k(client):
+    res = client.post("/api/ask", json={"message": "anything", "top_k": 1000})
+    assert res.status_code == 422

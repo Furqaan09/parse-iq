@@ -10,17 +10,17 @@ come only from your documents, with citations back to the source page.
    is recorded in Postgres.
 2. **Chunk:** the document is split into section-aware text chunks. Images are
    OCR'd with Tesseract first.
-3. **Embed:** each chunk is embedded locally with `all-MiniLM-L6-v2` and stored
-   in a FAISS vector index.
-4. **Ask:** the question is embedded, the closest chunks are retrieved from
-   FAISS and reranked with a cross-encoder. An LLM served through Hugging Face
-   Inference Providers then answers from those chunks, citing `[n]` sources.
+3. **Embed:** each chunk is embedded with OpenAI `text-embedding-3-small` and
+   stored in Postgres with pgvector.
+4. **Ask:** the question runs through vector and full-text search, the results
+   are fused with RRF and reranked with a cross-encoder. An OpenAI model then
+   answers from those chunks, citing `[n]` sources.
 
 ## Stack
 
 - **Backend:** FastAPI, PostgreSQL with pgvector, SQLModel and Alembic, OpenAI
-  embeddings, a local ONNX cross-encoder (fastembed), Hugging Face Inference
-  Providers. Dependencies are managed with [uv](https://docs.astral.sh/uv/).
+  embeddings and chat, a local ONNX cross-encoder (fastembed). Dependencies are
+  managed with [uv](https://docs.astral.sh/uv/).
 - **Frontend:** React, TypeScript and Tailwind (Vite). FastAPI serves the built
   app, so production is one container on one port.
 
@@ -51,13 +51,13 @@ frontend/
 
 ## Getting started
 
-You need Docker for Postgres, and a Hugging Face token for the chat LLM.
+You need Docker for Postgres, and an OpenAI API key.
 
 Create the two env files first:
 
 ```bash
 cp .env.example .env            # POSTGRES_* values used by Docker Compose
-cp api/.env.example api/.env    # DATABASE_URL and HF_TOKEN
+cp api/.env.example api/.env    # DATABASE_URL and OPENAI_API_KEY
 ```
 
 The database password in `api/.env` must match `POSTGRES_PASSWORD` in `.env`.

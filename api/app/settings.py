@@ -17,11 +17,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=ENV_FILE, extra="ignore")
 
     database_url: str
-    hf_token: SecretStr | None = None
-    hf_llm_model: str = "Qwen/Qwen2.5-14B-Instruct-1M"
-    hf_llm_provider: str = "auto"
     openai_api_key: SecretStr | None = None
     embedding_model: str = "text-embedding-3-small"
+    llm_model: str = "gpt-5.6-luna"
 
 
 # Create a single instance at import

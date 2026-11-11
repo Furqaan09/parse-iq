@@ -1,4 +1,4 @@
-from app.services.rag import _validate_citations
+from app.retrieval.answer import _validate_citations
 
 CITATIONS = [
     {"n": 1, "title": "Syllabus A"},
