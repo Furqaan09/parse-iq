@@ -54,18 +54,18 @@ jobs:
       - name: Check models match migrations
         run: uv run alembic check
 
-      # Cache Hugging Face reranker to avoid downloading every time
-      - name: Cache Hugging Face model
+      - name: Cache reranker model
         uses: actions/cache@v4
         with:
-          path: ~/.cache/huggingface
-          key: hf-${{ hashFiles('api/app/services/reranker.py') }}
+          path: ~/.cache/fastembed
+          key: fastembed-${{ hashFiles('api/app/retrieval/rerank.py') }}
 
       - name: Run tests
         run: uv run pytest
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           RAG_EVAL_REPORT_DIR: ${{ github.workspace }}/eval-reports
+          FASTEMBED_CACHE_PATH: /home/runner/.cache/fastembed
 
       - name: Post retrieval eval report to the run summary
         if: always()

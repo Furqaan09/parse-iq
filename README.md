@@ -18,9 +18,9 @@ come only from your documents, with citations back to the source page.
 
 ## Stack
 
-- **Backend:** FastAPI, PostgreSQL with SQLModel and Alembic, FAISS,
-  sentence-transformers, Hugging Face Inference Providers. Dependencies are
-  managed with [uv](https://docs.astral.sh/uv/).
+- **Backend:** FastAPI, PostgreSQL with pgvector, SQLModel and Alembic, OpenAI
+  embeddings, a local ONNX cross-encoder (fastembed), Hugging Face Inference
+  Providers. Dependencies are managed with [uv](https://docs.astral.sh/uv/).
 - **Frontend:** React, TypeScript and Tailwind (Vite). FastAPI serves the built
   app, so production is one container on one port.
 

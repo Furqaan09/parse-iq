@@ -6,7 +6,7 @@ from sqlmodel import Session, select
 
 from app.models import Chunk
 from app.retrieval.embeddings import embed_texts
-from app.services.reranker import rerank
+from app.retrieval.rerank import rerank
 
 RRF_K = 60
 
@@ -64,7 +64,7 @@ def reciprocal_rank_fusion(rankings: list[list[Chunk]]) -> list[Chunk]:
     scores: dict[int, float] = defaultdict(float)
     chunks_by_id: dict[int, Chunk] = {}
 
-    # Fist fill in scores for vector seach then add scores for keyword search
+    # First fill in scores for vector search then add scores for keyword search
     for ranking in rankings:
         for rank, chunk in enumerate(ranking, start=1):
             scores[chunk.id] += 1 / (RRF_K + rank)
