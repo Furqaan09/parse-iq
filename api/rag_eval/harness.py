@@ -8,7 +8,16 @@ EVAL_DIR = Path(__file__).resolve().parent
 CORPUS_DIR = EVAL_DIR / "corpus"
 GOLDEN_PATH = EVAL_DIR / "golden.jsonl"
 
-CATEGORIES = {"lookup", "paraphrase", "disambiguation", "negation", "update", "unanswerable"}
+CATEGORIES = {
+    "lookup",
+    "paraphrase",
+    "disambiguation",
+    "negation",
+    "update",
+    "unanswerable",
+    "exact_id",
+    "jargon",
+}
 REFUSAL_PHRASE = "could not find"
 
 
