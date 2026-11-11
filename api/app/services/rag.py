@@ -5,9 +5,8 @@ from typing import Any
 from sqlmodel import Session, select
 
 from app.models import Chunk, Document
-from app.retrieval.search import vector_search
+from app.retrieval.search import search
 from app.services.llm_provider import generate_with_llm
-from app.services.reranker import rerank
 from app.settings import API_DIR, STORAGE_DIR
 
 logger = logging.getLogger(__name__)
@@ -112,30 +111,6 @@ def _validate_citations(answer: str, citations: list[dict]) -> tuple[str, list[d
     return cleaned_answer, filtered_citations
 
 
-# -----------------------------
-# Function to retrieve chunks
-# -----------------------------
-def retrieve_chunks(
-    session: Session,
-    query: str,
-    top_k: int = 6,
-    restrict_doc_ids: list[int] | None = None,
-    rerank_results: bool = True,
-) -> list[Chunk]:
-    """
-    Two-stage retrieval.
-        - pgvector pulls a candidate pool of max(top_k * 4, 20) chunks, filtered to restrict_doc_ids
-        inside the SQL query.
-        - A cross-encoder reranks that pool and the best top_k are returned.
-        - rerank_results=False skips the cross-encoder and returns the top_k in vector order.
-        Only used by the eval; production always reranks.
-    """
-    pool = vector_search(session, query, document_ids=restrict_doc_ids, limit=max(top_k * 4, 20))
-    if rerank_results:
-        return rerank(query, pool, top_k=top_k)
-    return pool[:top_k]
-
-
 # ---------------------------------
 # Function to generate RAG answer
 # ---------------------------------
@@ -143,7 +118,7 @@ def rag_answer(
     session: Session, query: str, top_k: int = 6, restrict_doc_ids: list[int] | None = None
 ) -> dict[str, Any]:
     # 1) retrieve the most relevant chunks
-    chunks = retrieve_chunks(session, query, top_k=top_k, restrict_doc_ids=restrict_doc_ids)
+    chunks = search(session, query, document_ids=restrict_doc_ids, top_k=top_k)
     if not chunks:
         return {
             "answer": "I could not find relevant information for that question in the indexed documents.",

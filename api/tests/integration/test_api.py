@@ -124,3 +124,58 @@ def test_vector_search_only_returns_requested_documents(client, engine):
 
     assert hits
     assert {chunk.document_id for chunk in hits} == {other_id}
+
+
+def test_keyword_search_matches_any_word_of_a_long_question(client, engine):
+    from sqlmodel import Session
+
+    from app.retrieval.search import keyword_search
+
+    upload(client)
+
+    with Session(engine) as session:
+        hits = keyword_search(session, "Do penguins or calculators appear anywhere?")
+
+    assert any("calculators" in (chunk.content_text or "") for chunk in hits)
+
+
+def test_keyword_search_finds_exact_identifiers(client, engine):
+    from sqlmodel import Session
+
+    from app.retrieval.search import keyword_search
+
+    upload(client)
+    upload(client, name="po.txt", content="Purchase order PO-7781 covers 100 laptops.")
+
+    with Session(engine) as session:
+        hits = keyword_search(session, "What does PO-7781 cover?")
+
+    assert hits
+    assert "PO-7781" in (hits[0].content_text or "")
+
+
+def test_keyword_search_only_returns_requested_documents(client, engine):
+    from sqlmodel import Session
+
+    from app.retrieval.search import keyword_search
+
+    upload(client)
+    other = upload(client, name="exam.txt", content="The final exam is held in the gym.")
+    other_id = other.json()["id"]
+
+    with Session(engine) as session:
+        hits = keyword_search(session, "final exam", document_ids=[other_id])
+
+    assert hits
+    assert {chunk.document_id for chunk in hits} == {other_id}
+
+
+def test_keyword_search_with_only_stop_words_returns_nothing(client, engine):
+    from sqlmodel import Session
+
+    from app.retrieval.search import keyword_search
+
+    upload(client)
+
+    with Session(engine) as session:
+        assert keyword_search(session, "what is it?") == []
