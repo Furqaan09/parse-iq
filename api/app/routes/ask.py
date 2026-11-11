@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Depends
 from sqlmodel import Session
 
 from app.db import get_session
-from app.services.rag import rag_answer
+from app.retrieval.answer import rag_answer
 
 # API router for question answering
 router = APIRouter(tags=["ask"])
@@ -16,7 +16,7 @@ router = APIRouter(tags=["ask"])
 @router.post("/ask")
 def ask(
     message: str = Body(..., embed=True),
-    top_k: int = Body(6, embed=True),
+    top_k: int = Body(6, embed=True, ge=1, le=20),
     document_ids: list[int] | None = Body(None, embed=True),
     session: Session = Depends(get_session),
 ):

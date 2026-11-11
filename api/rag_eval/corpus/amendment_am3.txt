@@ -1,0 +1,14 @@
+Amendment AM-3 to Master Supply Agreement MSA-2026-014
+
+Parties: Calder Logistics Inc. and Northpeak Technologies Ltd.
+Effective date: March 1, 2027
+
+Price Change
+Because of higher memory component costs, the parties agree to the following change.
+Revised unit price for SKU LT-200: $840.50 per unit.
+The revised price applies to purchase orders issued on or after March 1, 2027, including PO-7781.
+All other terms of the agreement remain unchanged.
+
+Signatures
+Signed for Calder Logistics Inc. by Maria Okafor, Procurement Director.
+Signed for Northpeak Technologies Ltd. by Samuel Reyes, Sales Director.

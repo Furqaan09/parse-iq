@@ -5,10 +5,10 @@ version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.16.5",
-    "faiss-cpu>=1.12.0",
     "fastapi>=0.116.2",
-    "huggingface-hub>=0.35.3",
-    "numpy>=2.3.3",
+    "fastembed>=0.9.1",
+    "openai>=3.48.0",
+    "pgvector>=0.5.1",
     "pillow>=11.3.0",
     "psycopg[binary]>=3.2.10",
     "pydantic>=2.11.9",
@@ -16,10 +16,8 @@ dependencies = [
     "pypdf>=6.21.1",
     "pytesseract>=0.3.13",
     "python-multipart>=0.0.20",
-    "sentence-transformers>=5.1.1",
     "sqlalchemy>=2.0.43",
     "sqlmodel>=0.0.25",
-    "torch==2.8.0",
     "uvicorn[standard]>=0.35.0",
 ]
 
@@ -29,16 +27,7 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=9.1.1",
     "ruff>=0.15.20",
-    "transformers>=4.57.1,<4.58",
 ]
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true # only packages that name this index use it
-
-[tool.uv.sources]
-torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 
 # --- Black ---
@@ -78,14 +67,9 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Body", "fastapi.Query", "f
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
-    "integration: needs Postgres and downloads the embedding/reranker models",
+    "integration: needs Postgres and OPENAI_API_KEY; downloads the reranker model",
     "eval: scores retrieval/answer quality against the golden set in rag_eval/",
-    "llm: calls the real hosted LLM (costs money, needs HF_TOKEN); skipped by default",
+    "llm: calls the real hosted LLM (costs money, needs OPENAI_API_KEY); skipped by default",
 ]
 # Never call the paid LLM unless asked for explicitly with `pytest -m llm`.
 addopts = "-m 'not llm'"
-
-filterwarnings = [
-    # faiss's SWIG bindings emit these on Python 3.13; not our code.
-    "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
-]

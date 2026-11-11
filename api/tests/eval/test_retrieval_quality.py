@@ -24,34 +24,36 @@ pytestmark = [pytest.mark.integration, pytest.mark.eval]
 
 ANSWERABLE = [q for q in load_golden() if q.answerable]
 CONTEXT_SIZE = 6  # chunks rag_answer() hands to the LLM
-CANDIDATE_POOL = max(CONTEXT_SIZE * 4, 20)  # chunks FAISS hands to the reranker
+CANDIDATE_POOL = max(CONTEXT_SIZE * 4, 20)  # chunks each search leg returns
 
 
-# They exist to catch changes that make retrieval worse. When a change makes it
-# better, raise them so the improvement can't quietly slip back.
-MIN_HIT_AT_6 = 0.95
-MIN_HIT_AT_3 = 0.875
-MIN_MRR = 0.70
+# Baseline set from running jina-reranker-v1-turbo on 35 answerable questions
+# About one question below each measured value to account for noise
+MIN_HIT_AT_6 = 0.97  # measured 100% (35/35)
+MIN_HIT_AT_3 = 0.94  # measured 97% (34/35)
+MIN_MRR = 0.85  # measured 0.89
 MIN_POOL_RECALL = 0.95
-MIN_CATEGORY_HIT_AT_6 = 0.75  # smallest real category has 4 questions: 3 of 4
+MIN_CATEGORY_HIT_AT_6 = 0.75  # 1-10 questions per category; 1-question category must be perfect
 
 
 @pytest.fixture(scope="module")
 def runs(engine, eval_corpus) -> dict[str, list[RetrievalResult]]:
     """Every answerable question, through each retrieval configuration, once."""
-    from app.services.rag import retrieve_chunks
+    from app.retrieval.search import hybrid_search, keyword_search, search, vector_search
 
     configs = {
-        "dense-only": {"top_k": CONTEXT_SIZE, "rerank_results": False},
-        "dense+rerank": {"top_k": CONTEXT_SIZE, "rerank_results": True},  # production
-        "candidate-pool": {"top_k": CANDIDATE_POOL, "rerank_results": False},
+        "vector": lambda s, q: vector_search(s, q, limit=CONTEXT_SIZE),
+        "keyword": lambda s, q: keyword_search(s, q, limit=CONTEXT_SIZE),
+        "hybrid": lambda s, q: hybrid_search(s, q, limit=CANDIDATE_POOL)[:CONTEXT_SIZE],
+        "hybrid+rerank": lambda s, q: search(s, q, top_k=CONTEXT_SIZE),  # production
+        "candidate-pool": lambda s, q: hybrid_search(s, q, limit=CANDIDATE_POOL),
     }
     results: dict[str, list[RetrievalResult]] = {name: [] for name in configs}
 
     with Session(engine) as session:
         for question in ANSWERABLE:
-            for name, kwargs in configs.items():
-                chunks = retrieve_chunks(session, question.question, **kwargs)
+            for name, run_search in configs.items():
+                chunks = run_search(session, question.question)
                 relevance = [
                     is_relevant(c.content_text or "", eval_corpus[c.document_id], question)
                     for c in chunks
@@ -72,7 +74,7 @@ def runs(engine, eval_corpus) -> dict[str, list[RetrievalResult]]:
 
 def _write_report(results: dict[str, list[RetrievalResult]]) -> None:
     report = render_retrieval_report(
-        {name: results[name] for name in ("dense-only", "dense+rerank")}
+        {name: results[name] for name in ("vector", "keyword", "hybrid", "hybrid+rerank")}
     )
     pool = summarize_retrieval(results["candidate-pool"], ks=(CANDIDATE_POOL,))
     report += f"\nCandidate pool recall@{CANDIDATE_POOL}: {pool[f'hit@{CANDIDATE_POOL}']:.0%}\n"
@@ -83,30 +85,30 @@ def _write_report(results: dict[str, list[RetrievalResult]]) -> None:
 
 
 def test_correct_chunk_reaches_the_llm_context(runs):
-    assert summarize_retrieval(runs["dense+rerank"])["hit@6"] >= MIN_HIT_AT_6
+    assert summarize_retrieval(runs["hybrid+rerank"])["hit@6"] >= MIN_HIT_AT_6
 
 
 def test_correct_chunk_is_usually_in_the_top_3(runs):
-    assert summarize_retrieval(runs["dense+rerank"])["hit@3"] >= MIN_HIT_AT_3
+    assert summarize_retrieval(runs["hybrid+rerank"])["hit@3"] >= MIN_HIT_AT_3
 
 
 def test_correct_chunk_ranks_high_on_average(runs):
-    assert summarize_retrieval(runs["dense+rerank"])["mrr"] >= MIN_MRR
+    assert summarize_retrieval(runs["hybrid+rerank"])["mrr"] >= MIN_MRR
 
 
 def test_candidate_pool_contains_the_answer(runs):
-    # The reranker only reorders what FAISS hands it. Answer must be in the candidate pool.
+    # The reranker only reorders what hybrid search hands it. Answer must be in the candidate pool.
     pool = summarize_retrieval(runs["candidate-pool"], ks=(CANDIDATE_POOL,))
     assert pool[f"hit@{CANDIDATE_POOL}"] >= MIN_POOL_RECALL
 
 
 def test_reranking_is_at_least_as_good_as_dense_only(runs):
-    dense = summarize_retrieval(runs["dense-only"])["mrr"]
-    reranked = summarize_retrieval(runs["dense+rerank"])["mrr"]
+    dense = summarize_retrieval(runs["vector"])["mrr"]
+    reranked = summarize_retrieval(runs["hybrid+rerank"])["mrr"]
     assert reranked >= dense
 
 
 @pytest.mark.parametrize("category", sorted({q.category for q in ANSWERABLE}))
 def test_no_question_category_is_left_behind(runs, category):
-    results = by_category(runs["dense+rerank"])[category]
+    results = by_category(runs["hybrid+rerank"])[category]
     assert summarize_retrieval(results)["hit@6"] >= MIN_CATEGORY_HIT_AT_6

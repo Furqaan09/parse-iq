@@ -10,7 +10,7 @@ from app.settings import API_DIR
 
 logger = logging.getLogger(__name__)
 
-CHUNK_TARGET_CHARS = 800  # header + body must stay under MiniLM's 256-token limit
+CHUNK_TARGET_CHARS = 800
 
 _WHITESPACE = re.compile(r"[ \t]+")
 _PAGE_NUMBER = re.compile(r"^\d{1,3}$")

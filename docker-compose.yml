@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -28,7 +28,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      # Uploads and FAISS index
+      # Uploaded files
       - ./api/storage:/app/storage
 
 volumes:

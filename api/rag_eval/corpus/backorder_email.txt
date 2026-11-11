@@ -1,0 +1,13 @@
+From: Lena Fischer <shipping@northpeak-tech.com>
+To: Receiving, Calder Logistics
+Subject: PO-7781 partial shipment
+
+Hello,
+
+We shipped 95 of the 100 LT-200 laptops on purchase order PO-7781 today.
+The remaining 5 units are backordered because of a supplier delay.
+We expect to ship them on April 14, 2027 and will send tracking details then.
+
+Regards,
+Lena Fischer
+Shipping Coordinator, Northpeak Technologies Ltd.

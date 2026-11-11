@@ -31,6 +31,10 @@ ENV UV_PYTHON_DOWNLOADS=never \
 COPY api/pyproject.toml api/uv.lock api/.python-version ./
 RUN uv sync --locked --no-dev
 
+# Bake the reranker model into the image so a cold start doesn't download it
+ENV FASTEMBED_CACHE_PATH=/app/.fastembed_cache
+RUN .venv/bin/python -c "from fastembed.rerank.cross_encoder import TextCrossEncoder; TextCrossEncoder('jinaai/jina-reranker-v1-turbo-en')"
+
 COPY api/ ./
 COPY --from=frontend /src/api/static ./static
 

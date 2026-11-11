@@ -1,0 +1,16 @@
+Calder Logistics Inc.
+Accounts Payable Invoice Matching Policy
+
+Three-Way Match
+Before an invoice is paid, Accounts Payable compares it with the purchase order and the goods receipt.
+The invoiced quantity must not exceed the quantity recorded as received.
+The invoiced unit price must be within 2% of the purchase order unit price, unless a signed amendment sets a new price.
+Line totals must add up to the invoice total.
+
+Approvals
+Invoices over $25,000 need approval from the Controller before payment.
+Invoices that fail the three-way match are placed on hold until the difference is explained.
+
+Supplier Bank Details
+A change to a supplier's bank details is never accepted by email alone.
+Accounts Payable must confirm the change by calling the supplier at the phone number already on file.

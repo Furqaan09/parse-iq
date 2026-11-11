@@ -1,0 +1,18 @@
+Master Supply Agreement MSA-2026-014
+
+Between Calder Logistics Inc. (the Buyer) and Northpeak Technologies Ltd. (the Supplier).
+Effective date: January 15, 2027. Term: two years.
+
+Products and Pricing
+SKU LT-200 Laptop, 14-inch: $840.00 per unit
+SKU DK-15 Docking Station: $185.00 per unit
+Prices are fixed for the term and may change only through a written amendment signed by both parties.
+
+Ordering and Delivery
+The Buyer orders by issuing a purchase order that references this agreement.
+The Supplier must deliver within 10 business days of receiving a purchase order.
+Partial shipments are allowed. Any backorder must be confirmed to the Buyer in writing with an expected ship date.
+
+Payment Terms
+Payment terms are Net 30 from the date a correct invoice is received.
+Invoices must quote the purchase order number and list each SKU, quantity and unit price.
