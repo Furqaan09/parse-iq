@@ -1,65 +1,57 @@
 import logging
 
-import numpy as np
 from sqlmodel import Session, select
 
 from app.ingestion.chunking import chunk_document
 from app.models import Chunk, Document
-from app.services import faiss_index
-from app.services.embeddings import embed_texts
+from app.retrieval.embeddings import embed_texts
 
 logger = logging.getLogger(__name__)
 
 
-# ----------------------------------
-# Utility function to embed chunks
-# ----------------------------------
-def _vectors_for(chunks: list[Chunk]) -> tuple[np.ndarray, np.ndarray]:
-    """Embed the chunks that have the text. Returns (vectors, chunk ids), aligned row by row."""
+# -----------------------------------------------
+# Embed chunks and store each vector on its row
+# -----------------------------------------------
+def _embed_chunks(session: Session, chunks: list[Chunk]) -> int:
+    """Embed the chunks that have text and save each vector on its row. Returns how many."""
     chunks = [c for c in chunks if (c.content_text or "").strip()]
-    if not chunks:
-        return (
-            np.zeros((0, faiss_index.DIMS["text"]), dtype=np.float32),
-            np.zeros(0, dtype=np.int64),
-        )
-
     vectors = embed_texts([c.content_text for c in chunks])
-    ids = np.array([c.id for c in chunks], dtype=np.int64)
-    return vectors, ids
+
+    # Save the embedding for each chunk in the database
+    for chunk, vector in zip(chunks, vectors, strict=True):
+        chunk.embedding = vector
+    session.add_all(chunks)
+    session.commit()
+    return len(chunks)
 
 
-# ---------------------------------------------------------------------------------------
-# Function to index a document by chunking it and adding its vectors to the FAISS index
-# ---------------------------------------------------------------------------------------
+# -------------------------------------------------
+# Index one document: create chunks -> embed them
+# -------------------------------------------------
 def index_document(session: Session, doc: Document) -> dict:
-    """Chunk one document and add its vectors to the existing FAISS index."""
+    """Chunk one document and store an embedding on each chunk."""
     chunks = chunk_document(session, doc)
-    vectors, ids = _vectors_for(chunks)
-
-    index = faiss_index.load_or_new("text")
-    faiss_index.add(index, vectors, ids)
-    faiss_index.save(index, "text")
-    return {"chunks_created": len(chunks), "embedded": len(ids)}
+    n = _embed_chunks(session, chunks)
+    return {"chunks_created": len(chunks), "embedded": n}
 
 
-# -----------------------------------------------------------------
-# Function to reindex all documents by rebuilding the FAISS index
-# -----------------------------------------------------------------
+# --------------------------------------
+# Re-chunk and re-embed every document
+# --------------------------------------
 def reindex_all(session: Session) -> dict:
-    """Re-chunk every document and rebuild the FAISS index from scratch."""
+    """Re-chunk and re-embed every document. One failure doesn't stop the rest."""
     docs = session.exec(select(Document).order_by(Document.id)).all()
-    chunks: list[Chunk] = []
-    failed: list[int] = []
+    summary = {"documents": len(docs), "chunks": 0, "embedded": 0, "failed": []}
 
     for doc in docs:
         try:
-            chunks += chunk_document(session, doc)
+            result = index_document(session, doc)
         except Exception:
-            # Do not stop if one document fails to chunk
-            logger.exception("Chunking failed for document %s", doc.id)
-            failed.append(doc.id)
+            logger.exception("Indexing failed for document %s", doc.id)
+            session.rollback()
+            summary["failed"].append(doc.id)
+            continue
 
-    vectors, ids = _vectors_for(chunks)
-    index = faiss_index.rebuild("text", vectors, ids)
-    faiss_index.save(index, "text")
-    return {"documents": len(docs), "chunks": len(chunks), "embedded": len(ids), "failed": failed}
+        summary["chunks"] += result["chunks_created"]
+        summary["embedded"] += result["embedded"]
+    return summary

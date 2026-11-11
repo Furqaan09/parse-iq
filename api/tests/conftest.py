@@ -34,25 +34,26 @@ def engine():
 
 
 @contextmanager
-def isolated_client(engine, faiss_dir):
+def isolated_client(engine):
     """
-    A TestClient with a clean DB, an empty FAISS index in `faiss_dir`, and
-    uploads in a throwaway folder. Everything is undone on exit.
+    A TestClient with a clean DB and uploads in a throwaway folder. Everything
+    is undone on exit. Skips without an OpenAI key, since uploads are embedded.
     """
     from fastapi.testclient import TestClient
     from sqlalchemy import text
 
     import app.routes.documents as documents
-    import app.services.faiss_index as faiss_index
     from app.main import app
+    from app.settings import settings
+
+    if settings.openai_api_key is None:
+        pytest.skip("needs OPENAI_API_KEY: uploads and questions are embedded")
 
     with engine.begin() as conn:
         conn.execute(text("TRUNCATE documents, chunks RESTART IDENTITY CASCADE"))
 
     upload_root = documents.STORAGE_ROOT / "_pytest"
     with pytest.MonkeyPatch.context() as mp:
-        # FAISS index -> a temp dir, so tests never touch storage/faiss/text.faiss.
-        mp.setattr(faiss_index, "FAISS_DIR", faiss_dir)
         mp.setattr(documents, "STORAGE_ROOT", upload_root)
         try:
             yield TestClient(app)
@@ -61,14 +62,14 @@ def isolated_client(engine, faiss_dir):
 
 
 @pytest.fixture
-def client(engine, tmp_path):
+def client(engine):
     """Fresh, isolated app for a single test."""
-    with isolated_client(engine, tmp_path) as test_client:
+    with isolated_client(engine) as test_client:
         yield test_client
 
 
 @pytest.fixture(scope="module")
-def eval_corpus(engine, tmp_path_factory):
+def eval_corpus(engine):
     """
     Uploads every document in rag_eval/corpus/ ONCE per test module, through the
     real upload endpoint (so it's chunked and embedded exactly like production).
@@ -76,7 +77,7 @@ def eval_corpus(engine, tmp_path_factory):
     """
     from rag_eval.harness import CORPUS_DIR
 
-    with isolated_client(engine, tmp_path_factory.mktemp("eval_faiss")) as test_client:
+    with isolated_client(engine) as test_client:
         filenames_by_id = {}
         for path in sorted(CORPUS_DIR.glob("*.txt")):
             res = test_client.post(

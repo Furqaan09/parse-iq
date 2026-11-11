@@ -61,29 +61,6 @@ def test_get_missing_document_returns_404(client):
     assert client.get("/api/documents/999").status_code == 404
 
 
-def test_chunks_fit_embedding_model_token_limit(client, engine):
-    # Regression: chunks over MiniLM's 256-token limit were silently truncated
-    # before embedding, so their endings could never be retrieved.
-    from sqlmodel import Session, select
-    from transformers import AutoTokenizer
-
-    from app.models import Chunk
-
-    long_section = "Course Policies\n" + "\n".join(
-        f"Policy {i}: students must read the full policy document before week {i}."
-        for i in range(80)
-    )
-    upload(client, name="policies.txt", content=long_section)
-
-    tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-    with Session(engine) as session:
-        chunks = session.exec(select(Chunk)).all()
-
-    assert len(chunks) > 1
-    for chunk in chunks:
-        assert len(tokenizer(chunk.content_text)["input_ids"]) <= 256
-
-
 def test_chat_retrieves_relevant_chunk_and_validates_citations(client, fake_llm):
     upload(client)
     fake_llm.answer = "The study break is Feb. 16-20 [1]. See also the handbook [9]."
@@ -112,19 +89,38 @@ def test_chat_with_no_documents_does_not_call_llm(client, fake_llm):
     assert fake_llm.calls == []
 
 
-def test_reindex_rebuilds_index_without_stale_vectors(client, engine):
-    from sqlmodel import Session
+def test_reindex_reembeds_every_chunk(client, engine):
+    from sqlalchemy import func
+    from sqlmodel import Session, select
 
     from app.ingestion.indexing import reindex_all
-    from app.services import faiss_index
+    from app.models import Chunk
 
-    upload(client)  # adds N vectors
+    upload(client)
 
     with Session(engine) as session:
         summary = reindex_all(session)
+        unembedded = session.exec(
+            select(func.count()).select_from(Chunk).where(Chunk.embedding.is_(None))
+        ).one()
 
     assert summary["documents"] == 1
     assert summary["failed"] == []
     assert summary["embedded"] == summary["chunks"] > 0
-    # Check if it's Rebuilt and not Appended
-    assert faiss_index.load_or_new("text").ntotal == summary["embedded"]
+    assert unembedded == 0
+
+
+def test_vector_search_only_returns_requested_documents(client, engine):
+    from sqlmodel import Session
+
+    from app.retrieval.search import vector_search
+
+    upload(client)
+    other = upload(client, name="parking.txt", content="Parking permits are sold online.")
+    other_id = other.json()["id"]
+
+    with Session(engine) as session:
+        hits = vector_search(session, "When is the study break?", document_ids=[other_id])
+
+    assert hits
+    assert {chunk.document_id for chunk in hits} == {other_id}

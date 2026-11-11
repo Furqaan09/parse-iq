@@ -54,16 +54,17 @@ jobs:
       - name: Check models match migrations
         run: uv run alembic check
 
-      # Cache Hugging Face models to avoid downloading every time
-      - name: Cache Hugging Face models
+      # Cache Hugging Face reranker to avoid downloading every time
+      - name: Cache Hugging Face model
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: hf-${{ hashFiles('api/app/services/embeddings.py', 'api/app/services/reranker.py') }}
+          key: hf-${{ hashFiles('api/app/services/reranker.py') }}
 
       - name: Run tests
         run: uv run pytest
         env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           RAG_EVAL_REPORT_DIR: ${{ github.workspace }}/eval-reports
 
       - name: Post retrieval eval report to the run summary

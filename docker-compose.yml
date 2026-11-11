@@ -28,7 +28,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      # Uploads and FAISS index
+      # Uploaded files
       - ./api/storage:/app/storage
 
 volumes:
