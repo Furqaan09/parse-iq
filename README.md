@@ -159,3 +159,21 @@ uv run python -m app.cli reindex
 ```
 
 This re-chunks and re-embeds every document. Vectors are stored on the chunk rows, so nothing else needs rebuilding.
+
+## AWS
+
+Uploaded files go to a private S3 bucket, and the browser opens them through presigned URLs that expire after a few minutes. Approval emails go out through SNS.
+
+The app runs as one IAM user that can do only four things (least privilege):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"], "Resource": "arn:aws:s3:::<bucket>/*" },
+    { "Effect": "Allow", "Action": "sns:Publish", "Resource": "arn:aws:sns:<region>:<account-id>:<topic>" }
+  ]
+}
+```
+
+No `s3:ListBucket`: the app always knows its keys from the database. The app is hosted on Hugging Face, outside AWS, so it uses an access key instead of an IAM role. On AWS compute (ECS Fargate), it would use a role with no stored keys.

@@ -5,6 +5,7 @@ version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.16.5",
+    "boto3>=1.44.1",
     "fastapi>=0.116.2",
     "fastembed>=0.9.1",
     "openai>=3.48.0",
@@ -25,6 +26,7 @@ dependencies = [
 dev = [
     "black>=26.5.1",
     "httpx>=0.28.1",
+    "moto[s3]>=5.2.5",
     "pytest>=9.1.1",
     "ruff>=0.15.20",
 ]
