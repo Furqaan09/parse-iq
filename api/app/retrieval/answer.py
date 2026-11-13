@@ -9,7 +9,6 @@ from app.models import Chunk, Document
 from app.openai_client import openai_client
 from app.retrieval.search import search
 from app.settings import settings
-from app.storage import get_storage
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +37,6 @@ def _build_context_and_citations(session: Session, chunks: list[Chunk]):
         if not snippet:
             continue
 
-        file_url = get_storage().url(d.storage_key)
-
         context_parts.append(f"[{idx}] {d.title} (p.{c.page or 1})\n{snippet}\n")
         citations.append(
             {
@@ -47,7 +44,6 @@ def _build_context_and_citations(session: Session, chunks: list[Chunk]):
                 "document_id": d.id,
                 "title": d.title,
                 "page": c.page,
-                "file_url": file_url,
                 "snippet": snippet[:220],
             }
         )

@@ -111,7 +111,6 @@ export type ChatCitation = {
     document_id: number
     title: string
     page: number | null
-    file_url: string | null
     snippet: string
 }
 
