@@ -20,23 +20,29 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
+# Create a non-root user to run the app
+RUN useradd --create-home --uid 1000 app \
+    && mkdir /app \
+    && chown app:app /app
+USER app
 WORKDIR /app
 
 # Use the image's Python, never download one
 ENV UV_PYTHON_DOWNLOADS=never \
     UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+    UV_LINK_MODE=copy \
+    UV_NO_CACHE=1
 
 # Dependencies first for caching
-COPY api/pyproject.toml api/uv.lock api/.python-version ./
+COPY --chown=app:app api/pyproject.toml api/uv.lock api/.python-version ./
 RUN uv sync --locked --no-dev
 
 # Bake the reranker model into the image so a cold start doesn't download it
 ENV FASTEMBED_CACHE_PATH=/app/.fastembed_cache
 RUN .venv/bin/python -c "from fastembed.rerank.cross_encoder import TextCrossEncoder; TextCrossEncoder('jinaai/jina-reranker-v1-turbo-en')"
 
-COPY api/ ./
-COPY --from=frontend /src/api/static ./static
+COPY --chown=app:app api/ ./
+COPY --chown=app:app --from=frontend /src/api/static ./static
 
 # Run the venv's executables (uvicorn, alembic) without "uv run"
 ENV PATH="/app/.venv/bin:$PATH"
