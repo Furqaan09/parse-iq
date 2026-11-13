@@ -67,7 +67,6 @@ export default function UploadBox() {
                     <div><span className="font-medium">Title:</span> {result.title}</div>
                     <div><span className="font-medium">Media:</span> {result.media_type}</div>
                     <div><span className="font-medium">Pages:</span> {result.pages ?? "—"}</div>
-                    <div><span className="font-medium">Path:</span> {result.storage_path}</div>
                     <div><span className="font-medium">Created:</span> {result.created_at ?? "—"}</div>
                 </div>
             )}

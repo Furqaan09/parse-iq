@@ -6,7 +6,6 @@ export type UploadResponse = {
     title: string
     media_type: "pdf" | "image" | "text"
     pages: number | null
-    storage_path: string
     created_at: string
 }
 
@@ -44,7 +43,6 @@ export type DocumentItem = {
     title: string
     media_type: "pdf" | "image" | "text"
     pages: number | null
-    storage_path: string
 }
 
 // --------------------------------------------
@@ -90,7 +88,6 @@ export type GetDocumentResponse = {
     title: string
     media_type: "pdf" | "image" | "text"
     pages: number | null
-    storage_path: string
     file_url: string | null
 }
 

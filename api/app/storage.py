@@ -5,14 +5,14 @@ from typing import Protocol
 import boto3
 from botocore.config import Config
 
-from app.settings import STORAGE_DIR, settings
+from app.settings import UPLOADS_DIR, settings
 
 PRESIGNED_URL_SECONDS = 600  # 10 minutes
 
 
-# ------------------------------------------
-# Structual interface for storage backends
-# ------------------------------------------
+# -------------------------------------------
+# Structural interface for storage backends
+# -------------------------------------------
 class Storage(Protocol):
     def put(self, key: str, data: bytes, content_type: str) -> None: ...
     def get(self, key: str) -> bytes: ...
@@ -81,4 +81,4 @@ def get_storage() -> Storage:
             access_key_id=settings.aws_access_key_id,
             secret_access_key=settings.aws_secret_access_key.get_secret_value(),
         )
-    return LocalStorage(STORAGE_DIR / "uploads")
+    return LocalStorage(UPLOADS_DIR)

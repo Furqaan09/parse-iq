@@ -36,14 +36,32 @@ def test_upload_chunks_and_embeds_document(client):
     assert processing["embedded"] == processing["chunks_created"]
 
 
-def test_upload_cannot_write_outside_storage(client):
-    res = upload(client, name="../../../evil.txt")
+def test_upload_cannot_write_outside_storage(client, engine):
+    from sqlmodel import Session
 
-    assert res.status_code == 200
-    path = res.json()["storage_path"]
-    assert path.startswith("storage/uploads/_pytest/")
-    assert ".." not in path
-    assert path.endswith("/evil.txt")
+    from app.models import Document
+    from app.storage import get_storage
+
+    doc_id = upload(client, name="../../../evil.txt").json()["id"]
+
+    with Session(engine) as session:
+        key = session.get(Document, doc_id).storage_key
+    assert ".." not in key
+    assert key.endswith("_evil.txt")
+    assert get_storage().get(key) == SYLLABUS.encode()
+
+
+def test_unreadable_pdf_is_rejected_before_anything_is_stored(client):
+    from app.storage import get_storage
+
+    res = client.post(
+        "/api/documents/upload",
+        files={"file": ("broken.pdf", b"not a pdf", "application/pdf")},
+    )
+
+    assert res.status_code == 400
+    assert client.get("/api/documents").json()["total"] == 0
+    assert not any(get_storage().root.rglob("*"))
 
 
 def test_list_and_get_document(client):

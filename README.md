@@ -31,7 +31,7 @@ Dockerfile           # one image: builds React, then the Python app (reranker mo
 docker-compose.yml   # db (Postgres + pgvector) + app
 api/
   app/
-    main.py          # FastAPI app: /api routes, /files, the React build at /
+    main.py          # FastAPI app: /api routes, /files (local storage only), the React build at /
     settings.py      # all configuration (env vars and api/.env)
     db.py            # database engine and session
     models.py        # SQLModel tables: Document, Chunk
@@ -43,7 +43,7 @@ api/
   migration/         # Alembic migrations
   rag_eval/          # golden questions, test corpus and evaluation harness
   tests/             # unit, integration and eval tests
-  storage/           # uploaded files (gitignored)
+  storage/           # uploaded files only when STORAGE_BACKEND=local (gitignored)
 frontend/
   src/
     components/      # UploadBox, DocumentList, ChatPanel
