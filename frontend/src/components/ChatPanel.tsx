@@ -125,7 +125,7 @@ export default function ChatPanel() {
                                             <button
                                                 type="button"
                                                 onClick={() => openCitation(citation.document_id, citation.page)}
-                                                className="rounded-lg border px-3 py-1.5 text-xs hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                                className="rounded-lg border px-3 py-1.5 text-xs hover:bg-gray-100"
                                             >
                                                 Open source
                                             </button>

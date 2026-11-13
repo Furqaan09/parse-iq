@@ -49,7 +49,7 @@ def _ocr_pages(data: bytes) -> list[Page]:
 # Extract text from a file based on its media type
 # --------------------------------------------------
 def extract_pages(data: bytes, media_type: MediaType) -> list[Page]:
-    """Raw text per page. Raises if the file is missing or unreadable."""
+    """Raw text per page. Raises if the file is unreadable."""
     if media_type == MediaType.pdf:
         return _pdf_pages(data)
     if media_type == MediaType.image:
