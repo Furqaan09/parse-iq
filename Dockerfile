@@ -16,6 +16,9 @@ FROM python:3.13-slim-bookworm
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.3 /uv /bin/uv
 
+# Lambda Web Adapter: a Lambda extension that forwards each invocation to uvicorn as plain HTTP.
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1 /lambda-adapter /opt/extensions/lambda-adapter
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
@@ -40,6 +43,11 @@ RUN uv sync --locked --no-dev
 # Bake the reranker model into the image so a cold start doesn't download it
 ENV FASTEMBED_CACHE_PATH=/app/.fastembed_cache
 RUN .venv/bin/python -c "from fastembed.rerank.cross_encoder import TextCrossEncoder; TextCrossEncoder('jinaai/jina-reranker-v1-turbo-en')"
+
+ENV AWS_LWA_PORT=8000 \
+    AWS_LWA_READINESS_CHECK_PATH=/api/status \
+    AWS_LWA_ASYNC_INIT=true \
+    HF_HUB_OFFLINE=1
 
 COPY --chown=app:app api/ ./
 COPY --chown=app:app --from=frontend /src/api/static ./static
