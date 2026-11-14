@@ -25,14 +25,11 @@ class Settings(BaseSettings):
     storage_backend: Literal["local", "s3"] = "local"
     s3_bucket: str | None = None
     aws_region: str | None = None
-    aws_access_key_id: str | None = None
-    aws_secret_access_key: SecretStr | None = None
 
     @model_validator(mode="after")
     def _s3_needs_bucket_and_keys(self) -> Self:
         if self.storage_backend == "s3":
-            required = ("s3_bucket", "aws_region", "aws_access_key_id", "aws_secret_access_key")
-            missing = [name.upper() for name in required if not getattr(self, name)]
+            missing = [n.upper() for n in ("s3_bucket", "aws_region") if not getattr(self, n)]
             if missing:
                 raise ValueError(f"STORAGE_BACKEND=s3 also needs {', '.join(missing)}")
         return self

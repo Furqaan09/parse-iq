@@ -46,13 +46,11 @@ class LocalStorage:
 class S3Storage:
     """Files in a private S3 bucket. Browsers open them through presigned URLs."""
 
-    def __init__(self, bucket: str, region: str, access_key_id: str, secret_access_key: str):
+    def __init__(self, bucket: str, region: str):
         self.bucket = bucket
         self.client = boto3.client(
             "s3",
             region_name=region,
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_access_key,
             config=Config(signature_version="s3v4"),
         )
 
@@ -78,7 +76,5 @@ def get_storage() -> Storage:
         return S3Storage(
             bucket=settings.s3_bucket,
             region=settings.aws_region,
-            access_key_id=settings.aws_access_key_id,
-            secret_access_key=settings.aws_secret_access_key.get_secret_value(),
         )
     return LocalStorage(UPLOADS_DIR)

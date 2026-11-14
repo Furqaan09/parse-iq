@@ -13,11 +13,13 @@ KEY = "2026/11/abc123_invoice.pdf"
 
 
 @pytest.fixture
-def s3():
+def s3(monkeypatch):
+    # Fake credentials for boto3's chain
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
     with mock_aws():
-        storage = S3Storage(
-            bucket=BUCKET, region="us-east-1", access_key_id="testing", secret_access_key="testing"
-        )
+        storage = S3Storage(bucket=BUCKET, region="us-east-1")
         storage.client.create_bucket(Bucket=BUCKET)
         yield storage
 
