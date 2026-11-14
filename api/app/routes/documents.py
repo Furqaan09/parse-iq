@@ -25,6 +25,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 MediaType = Literal["pdf", "image", "text"]
 
 _UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 
 
 # -------------------------------------
@@ -97,8 +98,8 @@ def _inspect_file(content: bytes, media_type: MediaType) -> tuple[int | None, st
 @router.post("/upload")
 def upload_document(file: UploadFile = File(...), session: Session = Depends(get_session)):
     # Validation for large files
-    if file.size and file.size > 50 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File too large (>50MB).")
+    if file.size and file.size > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 4 MB).")
 
     media_type = _infer_media_type(file.filename, file.content_type)
     content = file.file.read()
