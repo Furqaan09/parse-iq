@@ -1,6 +1,7 @@
 import logging
 import re
 import textwrap
+import time
 from typing import Any
 
 from sqlmodel import Session, select
@@ -146,7 +147,9 @@ def rag_answer(
     """)
 
     # 4) generate with the LLM
+    started = time.perf_counter()
     answer = generate_with_llm(system, user)
+    logger.info("llm: %.0f ms", (time.perf_counter() - started) * 1000)
 
     # 5) verify [n] citations against what was actually retrieved
     answer, citations = _validate_citations(answer, citations)
