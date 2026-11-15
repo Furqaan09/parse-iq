@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     aws_region: str | None = None
 
     @model_validator(mode="after")
-    def _s3_needs_bucket_and_keys(self) -> Self:
+    def _s3_needs_bucket_and_region(self) -> Self:
         if self.storage_backend == "s3":
             missing = [n.upper() for n in ("s3_bucket", "aws_region") if not getattr(self, n)]
             if missing:
