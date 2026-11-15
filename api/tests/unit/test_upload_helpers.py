@@ -1,6 +1,8 @@
+import re
+
 import pytest
 
-from app.routes.documents import infer_media_type, sanitize_filename
+from app.routes.documents import _infer_media_type, _new_storage_key, _sanitize_filename
 
 
 @pytest.mark.parametrize(
@@ -16,7 +18,7 @@ from app.routes.documents import infer_media_type, sanitize_filename
     ],
 )
 def test_sanitize_filename_blocks_path_traversal(raw, expected):
-    assert sanitize_filename(raw) == expected
+    assert _sanitize_filename(raw) == expected
 
 
 @pytest.mark.parametrize(
@@ -30,4 +32,12 @@ def test_sanitize_filename_blocks_path_traversal(raw, expected):
     ],
 )
 def test_infer_media_type(filename, content_type, expected):
-    assert infer_media_type(filename, content_type) == expected
+    assert _infer_media_type(filename, content_type) == expected
+
+
+def test_new_storage_key_is_dated_random_and_safe():
+    first = _new_storage_key("../../My Invoice.pdf")
+    second = _new_storage_key("../../My Invoice.pdf")
+
+    assert first != second
+    assert re.fullmatch(r"\d{4}/\d{2}/[0-9a-f]{12}_My_Invoice\.pdf", first)

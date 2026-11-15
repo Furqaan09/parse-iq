@@ -26,7 +26,7 @@ class Document(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     title: str = Field(index=True)
     media_type: MediaType = Field(default=MediaType.pdf)
-    storage_path: str
+    storage_key: str
     pages: int | None = Field(default=None)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),

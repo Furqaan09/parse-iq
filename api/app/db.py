@@ -2,7 +2,7 @@ from sqlmodel import Session, create_engine
 
 from app.settings import settings
 
-engine = create_engine(settings.database_url, echo=False)
+engine = create_engine(settings.database_url, echo=False, pool_pre_ping=True)
 
 
 # Context manager to get a session for database operations

@@ -1,3 +1,5 @@
+import logging
+import time
 from collections import defaultdict
 
 from sqlalchemy import Text, cast, func
@@ -7,6 +9,8 @@ from sqlmodel import Session, select
 from app.models import Chunk
 from app.retrieval.embeddings import embed_texts
 from app.retrieval.rerank import rerank
+
+logger = logging.getLogger(__name__)
 
 RRF_K = 60
 
@@ -96,5 +100,16 @@ def search(
     session: Session, query: str, *, document_ids: list[int] | None = None, top_k: int = 6
 ) -> list[Chunk]:
     """Hybrid search, then the cross-encoder picks the best top_k."""
+    started = time.perf_counter()
+
     pool = hybrid_search(session, query, document_ids=document_ids, limit=max(top_k * 4, 20))
-    return rerank(query, pool, top_k=top_k)
+    searched = time.perf_counter()
+    ranked = rerank(query, pool, top_k=top_k)
+
+    logger.info(
+        "search: hybrid %.0f ms (%d chunks), rerank %.0f ms",
+        (searched - started) * 1000,
+        len(pool),
+        (time.perf_counter() - searched) * 1000,
+    )
+    return ranked

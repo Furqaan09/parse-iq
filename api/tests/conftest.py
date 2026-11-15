@@ -1,11 +1,14 @@
 import os
-import shutil
+import tempfile
 from contextlib import contextmanager
+from pathlib import Path
 
 # Set before the app is imported, so app.settings sees the test database
 os.environ.setdefault(
     "DATABASE_URL", "postgresql+psycopg://parseiq:parseiq_pw@localhost:5433/parseiq_test"
 )
+# Deliberately use local storage for tests even if the .env file says otherwise
+os.environ["STORAGE_BACKEND"] = "local"
 
 import pytest  # noqa: E402
 
@@ -42,7 +45,7 @@ def isolated_client(engine):
     from fastapi.testclient import TestClient
     from sqlalchemy import text
 
-    import app.routes.documents as documents
+    import app.storage as storage
     from app.main import app
     from app.settings import settings
 
@@ -52,13 +55,13 @@ def isolated_client(engine):
     with engine.begin() as conn:
         conn.execute(text("TRUNCATE documents, chunks RESTART IDENTITY CASCADE"))
 
-    upload_root = documents.STORAGE_ROOT / "_pytest"
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(documents, "STORAGE_ROOT", upload_root)
+    with tempfile.TemporaryDirectory() as upload_dir, pytest.MonkeyPatch.context() as mp:
+        mp.setattr(storage, "UPLOADS_DIR", Path(upload_dir))
+        storage.get_storage.cache_clear()
         try:
             yield TestClient(app)
         finally:
-            shutil.rmtree(upload_root, ignore_errors=True)
+            storage.get_storage.cache_clear()
 
 
 @pytest.fixture

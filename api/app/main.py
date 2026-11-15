@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.routes.ask import router as ask_router
 from app.routes.documents import router as documents_router
-from app.settings import STATIC_DIR, STORAGE_DIR
+from app.settings import STATIC_DIR, UPLOADS_DIR, settings
 
 # ------------------------
 # Logging configuration
@@ -41,12 +41,13 @@ api.include_router(ask_router)
 app.include_router(api)
 
 
-# -----------------------------------------------
-# Upload files at /files/<YYYY>/<MM>/<filename>
-# -----------------------------------------------
-UPLOADS_DIR = STORAGE_DIR / "uploads"
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/files", StaticFiles(directory=UPLOADS_DIR), name="files")
+# --------------------------------------------------------------------
+# Local storage only: serve uploads at /files/<key>.
+# With S3, file_url is a presigned link straight to the private bucket
+# --------------------------------------------------------------------
+if settings.storage_backend == "local":
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    app.mount("/files", StaticFiles(directory=UPLOADS_DIR), name="files")
 
 
 # --------------------------------------

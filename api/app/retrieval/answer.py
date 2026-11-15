@@ -1,6 +1,7 @@
 import logging
 import re
 import textwrap
+import time
 from typing import Any
 
 from sqlmodel import Session, select
@@ -8,30 +9,12 @@ from sqlmodel import Session, select
 from app.models import Chunk, Document
 from app.openai_client import openai_client
 from app.retrieval.search import search
-from app.settings import API_DIR, STORAGE_DIR, settings
+from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
 _CITATION_PATTERN = re.compile(r"\s?\[(\d+)\]")
 REFUSAL_MESSAGE = "I could not find that information in the provided documents."
-
-
-# ------------------------------------------------
-# Function to convert storage path to files path
-# ------------------------------------------------
-def _file_url_from_storage_path(storage_path: str) -> str | None:
-    """
-    Convert 'storage/uploads/YYYY/MM/file.pdf' -> '/files/YYYY/MM/file.pdf'
-    Only if path exists under uploads.
-    """
-    try:
-        base = API_DIR
-        abs_path = (base / storage_path).resolve()
-        uploads_root = STORAGE_DIR / "uploads"
-        rel = abs_path.relative_to(uploads_root)
-        return f"/files/{rel.as_posix()}"
-    except Exception:
-        return None
 
 
 # --------------------------------------------------------------
@@ -55,8 +38,6 @@ def _build_context_and_citations(session: Session, chunks: list[Chunk]):
         if not snippet:
             continue
 
-        file_url = _file_url_from_storage_path(d.storage_path) if d.storage_path else None
-
         context_parts.append(f"[{idx}] {d.title} (p.{c.page or 1})\n{snippet}\n")
         citations.append(
             {
@@ -64,7 +45,6 @@ def _build_context_and_citations(session: Session, chunks: list[Chunk]):
                 "document_id": d.id,
                 "title": d.title,
                 "page": c.page,
-                "file_url": file_url,
                 "snippet": snippet[:220],
             }
         )
@@ -152,7 +132,7 @@ def rag_answer(
         - Do NOT use outside knowledge.
         - Do NOT guess.
         - Cite sources in brackets like [1], [2] only when the answer is supported by context.
-        """)
+    """)
 
     user = textwrap.dedent(f"""\
         QUESTION:
@@ -164,10 +144,12 @@ def rag_answer(
         INSTRUCTIONS:
         - Use only the CONTEXT. Do NOT invent facts.
         - Include bracketed citations [n] aligned to the context items.
-        """)
+    """)
 
     # 4) generate with the LLM
+    started = time.perf_counter()
     answer = generate_with_llm(system, user)
+    logger.info("llm: %.0f ms", (time.perf_counter() - started) * 1000)
 
     # 5) verify [n] citations against what was actually retrieved
     answer, citations = _validate_citations(answer, citations)

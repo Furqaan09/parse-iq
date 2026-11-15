@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { askChat, type ChatCitation, errorMessage } from "../lib/api"
+import { askChat, type ChatCitation, getDocument, errorMessage } from "../lib/api"
 
 type ChatMessage =
     | {
@@ -55,9 +55,16 @@ export default function ChatPanel() {
         }
     }
 
-    function openCitation(fileUrl: string | null) {
-        if (!fileUrl) return
-        window.open(fileUrl, "_blank", "noopener,noreferrer")
+    async function openCitation(documentId: number, page: number | null) {
+        try {
+            const doc = await getDocument(documentId)
+            if (!doc.file_url) return
+            // Open document and jump to page if provided
+            const url = page ? `${doc.file_url}#page=${page}` : doc.file_url
+            window.open(url, "_blank", "noopener,noreferrer")
+        } catch (e) {
+            alert(errorMessage(e, "Failed to open document"))
+        }
     }
 
     return (
@@ -117,11 +124,10 @@ export default function ChatPanel() {
 
                                             <button
                                                 type="button"
-                                                onClick={() => openCitation(citation.file_url)}
-                                                disabled={!citation.file_url}
-                                                className="rounded-lg border px-3 py-1.5 text-xs hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                                onClick={() => openCitation(citation.document_id, citation.page)}
+                                                className="rounded-lg border px-3 py-1.5 text-xs text-white"
                                             >
-                                                Open source
+                                                View source
                                             </button>
                                         </div>
 
@@ -140,7 +146,7 @@ export default function ChatPanel() {
                         <div className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
                             ParseIQ
                         </div>
-                        <div className="text-sm text-gray-600">Thinking…</div>
+                        <div className="text-sm text-gray-600">Gathering context...</div>
                     </div>
                 )}
             </div>
@@ -163,7 +169,7 @@ export default function ChatPanel() {
                 <button
                     type="submit"
                     disabled={isLoading || !input.trim()}
-                    className="rounded-xl border px-4 py-3 text-sm font-medium hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-xl border px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
                     Send
                 </button>

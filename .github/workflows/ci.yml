@@ -6,6 +6,7 @@ on:
   pull_request:
 
 jobs:
+  # ----- Backend -----
   backend:
     runs-on: ubuntu-latest
     defaults:
@@ -71,6 +72,7 @@ jobs:
         if: always()
         run: cat "$GITHUB_WORKSPACE/eval-reports/retrieval.md" >> "$GITHUB_STEP_SUMMARY" || echo "No report generated"
 
+  # ----- Frontend -----
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -86,3 +88,35 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+
+  # ---- Deploy -----
+  deploy:
+    # Only after both jobs passed and only on main branch pushes
+    needs: [backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # request an OIDC token from GitHub
+      contents: read
+    env:
+      IMAGE: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/parseiq:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/parseiq-github-deploy
+          aws-region: us-east-1
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push the image
+        run: |
+          docker build --provenance=false -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Point the Lambda function at the new image
+        run: |
+          aws lambda update-function-code --function-name parseiq --image-uri "$IMAGE"
+          aws lambda wait function-updated-v2 --function-name parseiq
+

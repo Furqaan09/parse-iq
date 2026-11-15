@@ -1,5 +1,7 @@
 import datetime
 import re
+import uuid
+from io import BytesIO
 from pathlib import Path
 from typing import Literal
 
@@ -14,22 +16,22 @@ from sqlmodel import Session, select
 from app.db import get_session
 from app.ingestion.indexing import index_document
 from app.models import Document
-from app.settings import API_DIR, STORAGE_DIR
+from app.storage import get_storage
 
 # API router for document-related endpoints
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-# Directory to store uploaded files
-STORAGE_ROOT = STORAGE_DIR / "uploads"
-
 # Types for media
 MediaType = Literal["pdf", "image", "text"]
 
+_UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 
-# -------------------------------------------------------------
-# Function to detect media type from filename or content type
-# -------------------------------------------------------------
-def infer_media_type(filename: str, content_type: str) -> MediaType:
+
+# -------------------------------------
+# Utility functions for file handling
+# -------------------------------------
+def _infer_media_type(filename: str, content_type: str) -> MediaType:
     # Check content type first if provided by browser
     if content_type:
         if "pdf" in content_type:
@@ -52,18 +54,12 @@ def infer_media_type(filename: str, content_type: str) -> MediaType:
     return "text"
 
 
-# ------------------------------------------
-# Function to create a title from filename
-# ------------------------------------------
-def title_from_name(name: str) -> str:
+def _title_from_name(name: str) -> str:
     stem = Path(name).stem
     return " ".join(stem.replace("_", " ").split()).strip() or "Untitled"
 
 
-_UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
-
-
-def sanitize_filename(filename: str) -> str:
+def _sanitize_filename(filename: str) -> str:
     """
     Strip directory components and unsafe characters from a user-supplied
     filename before it is used to build a filesystem path (prevents path
@@ -78,55 +74,50 @@ def sanitize_filename(filename: str) -> str:
     return f"{safe_stem}{safe_suffix}"
 
 
+def _new_storage_key(filename: str) -> str:
+    """Returns a key e.g. '2026/11/3f9a0c1b2d4e_invoice.pdf'"""
+    now = datetime.datetime.now(datetime.UTC)
+    uid = uuid.uuid4().hex[:12]
+    return f"{now:%Y/%m}/{uid}_{_sanitize_filename(filename)}"
+
+
+def _inspect_file(content: bytes, media_type: MediaType) -> tuple[int | None, str]:
+    """Check the file can be read before storing it. Returns (page count, content type to store)."""
+    if media_type == "pdf":
+        return len(PdfReader(BytesIO(content)).pages), "application/pdf"
+    if media_type == "image":
+        with Image.open(BytesIO(content)) as image:
+            image.verify()
+            return None, Image.MIME.get(image.format, "application/octet-stream")
+    return None, "text/plain; charset=utf-8"
+
+
 # ------------------------------------
 # POST endpoint to upload a document
 # ------------------------------------
 @router.post("/upload")
-async def upload_document(file: UploadFile = File(...), session: Session = Depends(get_session)):
+def upload_document(file: UploadFile = File(...), session: Session = Depends(get_session)):
     # Validation for large files
-    if file.size and file.size > 50 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File too large (>50MB).")
+    if file.size and file.size > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 4 MB).")
 
-    # Infer media type
-    media_type = infer_media_type(file.filename, file.content_type)
-    title = title_from_name(file.filename)
-    safe_filename = sanitize_filename(file.filename)
+    media_type = _infer_media_type(file.filename, file.content_type)
+    content = file.file.read()
 
-    # Build a storage path
-    today = datetime.datetime.now(datetime.UTC)
-    dir_path = STORAGE_ROOT / f"{today:%Y}" / f"{today:%m}"
-    dir_path.mkdir(parents=True, exist_ok=True)
-
-    dest_path = dir_path / safe_filename
-
-    # Handle name collisions by adding a counter suffix
-    counter = 1
-    while dest_path.exists():
-        dest_path = dir_path / f"{Path(safe_filename).stem}_{counter}{Path(safe_filename).suffix}"
-        counter += 1
-
-    # Save the file on disk
-    content = await file.read()
-    with open(dest_path, "wb") as f:
-        f.write(content)
-
-    # Derieve metadata
-    pages = None
+    # Check the file before storing it, so a broken upload never reaches storage
     try:
-        if media_type == "pdf":
-            reader = PdfReader(str(dest_path))
-            pages = len(reader.pages)
-        elif media_type == "image":
-            Image.open(dest_path).verify()
+        pages, content_type = _inspect_file(content, media_type)
     except Exception as e:
-        dest_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=f"File parsing failed: {e}") from e
 
-    # Insert document record in DB
+    # Store the file before the row in db
+    key = _new_storage_key(file.filename)
+    get_storage().put(key, content, content_type)
+
     doc = Document(
-        title=title,
+        title=_title_from_name(file.filename),
         media_type=media_type,
-        storage_path=str(dest_path.relative_to(API_DIR)),
+        storage_key=key,
         pages=pages,
     )
     session.add(doc)
@@ -139,13 +130,11 @@ async def upload_document(file: UploadFile = File(...), session: Session = Depen
         # The upload itself still succeeds; the error is reported, not raised
         processing = {"chunks_created": 0, "embedded": 0, "processing_error": str(e)}
 
-    # Return a JSON response
     return JSONResponse(
         {
             "id": doc.id,
             "title": doc.title,
             "media_type": doc.media_type,
-            "storage_path": doc.storage_path,
             "pages": doc.pages,
             "created_at": doc.created_at.isoformat(),
             "processing": processing,
@@ -192,7 +181,6 @@ def list_documents(
             "id": d.id,
             "title": d.title,
             "media_type": d.media_type,
-            "storage_path": d.storage_path,
             "pages": d.pages,
             "created_at": d.created_at.isoformat(),
         }
@@ -209,18 +197,6 @@ def list_documents(
     }
 
 
-# ----------------------------------------------
-# Function to convert storage path to file URL
-# ----------------------------------------------
-def storage_path_to_file_url(storage_path: str) -> str | None:
-    try:
-        # Get relative path from storage root (e.g. 2025/09/file.pdf)
-        rel = Path(storage_path).resolve().relative_to(STORAGE_DIR / "uploads")
-        return f"/files/{rel.as_posix()}"
-    except Exception:
-        return None
-
-
 # -----------------------------------------------
 # GET endpoint to fetch a single document by ID
 # -----------------------------------------------
@@ -231,18 +207,10 @@ def get_document(doc_id: int = FastAPIPath(..., ge=1), session: Session = Depend
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    # Convert storage path to file URL
-    file_url = None
-    if doc.storage_path:
-        abs_path = API_DIR / doc.storage_path
-        if abs_path.exists():
-            file_url = storage_path_to_file_url(str(abs_path))
-
     return {
         "id": doc.id,
         "title": doc.title,
         "media_type": doc.media_type,
         "pages": doc.pages,
-        "storage_path": doc.storage_path,
-        "file_url": file_url,
+        "file_url": get_storage().url(doc.storage_key),
     }

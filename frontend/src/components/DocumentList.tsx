@@ -91,7 +91,6 @@ export default function DocumentList() {
                                 Open
                             </button>
                         </div>
-                        <div className="mt-2 truncate text-xs text-gray-500">{d.storage_path}</div>
                     </li>
                 ))}
             </ul>

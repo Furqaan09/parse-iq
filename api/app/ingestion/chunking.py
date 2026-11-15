@@ -6,7 +6,7 @@ from sqlmodel import Session, select
 
 from app.ingestion.extract import extract_pages
 from app.models import Chunk, Document
-from app.settings import API_DIR
+from app.storage import get_storage
 
 logger = logging.getLogger(__name__)
 
@@ -139,17 +139,6 @@ def _save_chunks(session: Session, doc: Document, lines: list[Line]) -> list[Chu
     return created
 
 
-def chunk_document(session: Session, doc: Document) -> list[Chunk]:
-    """Replace a document's chunks: extract pages -> lines -> sections -> chunk rows."""
-    # Read the file first: if it's missing or broken, the existing chunks are left alone
-    pages = extract_pages(API_DIR / doc.storage_path, doc.media_type)
-    lines = [line for page, text in pages for line in _lines_from_text(text, page)]
-
-    deleted = _delete_chunks(session, doc)
-    logger.info("Deleted %d existing chunks for document %s", deleted, doc.id)
-    return _save_chunks(session, doc, lines)
-
-
 def _delete_chunks(session: Session, doc: Document) -> int:
     """Delete all of a document's chunks. Returns how many were deleted."""
     chunks = session.exec(select(Chunk).where(Chunk.document_id == doc.id)).all()
@@ -157,3 +146,15 @@ def _delete_chunks(session: Session, doc: Document) -> int:
         session.delete(ch)
     session.commit()
     return len(chunks)
+
+
+def chunk_document(session: Session, doc: Document) -> list[Chunk]:
+    """Replace a document's chunks: extract pages -> lines -> sections -> chunk rows."""
+    # Read the file first: if it's missing or broken, the existing chunks are left alone
+    doc_bytes = get_storage().get(doc.storage_key)
+    pages = extract_pages(doc_bytes, doc.media_type)
+    lines = [line for page, text in pages for line in _lines_from_text(text, page)]
+
+    deleted = _delete_chunks(session, doc)
+    logger.info("Deleted %d existing chunks for document %s", deleted, doc.id)
+    return _save_chunks(session, doc, lines)
