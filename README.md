@@ -4,10 +4,14 @@ ParseIQ is an AI-powered document assistant. Upload documents such as PDFs,
 emails or screenshots of text, then ask questions in plain English. Answers
 come only from your documents, with citations back to the source page.
 
+**Live demo:** https://jchnhdms3jf3ahixdcvzxh7fqq0suhpn.lambda-url.us-east-1.on.aws/
+
+Runs for about $0 on AWS Lambda (container image, Lambda Web Adapter, Function URL) with Neon Postgres and S3.
+
 ## How it works
 
-1. **Upload** a PDF, image or text file. It's saved to disk and its metadata
-   is recorded in Postgres.
+1. **Upload** a PDF, image or text file. It's stored in a private S3 bucket
+   (a local folder in development) and its metadata is recorded in Postgres.
 2. **Chunk:** the document is split into section-aware text chunks. Images are
    OCR'd with Tesseract first.
 3. **Embed:** each chunk is embedded with OpenAI `text-embedding-3-small` and
@@ -28,7 +32,7 @@ come only from your documents, with citations back to the source page.
 
 ```
 Dockerfile           # one image: builds React, then the Python app (reranker model baked in)
-docker-compose.yml   # db (Postgres + pgvector) + app
+docker-compose.yml   # db + app -> (for dev and tests)
 api/
   app/
     main.py          # FastAPI app: /api routes, /files (local storage only), the React build at /
@@ -37,8 +41,9 @@ api/
     models.py        # SQLModel tables: Document, Chunk
     cli.py           # admin commands (reindex)
     openai_client.py # one shared OpenAI client
+    storage.py       # local (for dev) or S3 file storage
     routes/          # HTTP only: documents, ask
-    ingestion/       # file -> text -> chunks -> embeddings
+    ingestion/       # file -> extract text -> chunks -> embeddings
     retrieval/       # embeddings, hybrid search + RRF, reranker, answers with citations
   migration/         # Alembic migrations
   rag_eval/          # golden questions, test corpus and evaluation harness
@@ -88,6 +93,8 @@ Refusal is handled by the LLM plus citation validation.
 - The reranker was chosen on the same questions it is scored on, so these numbers are optimistic.
 - Synthetic documents: the numbers compare setups and catch regressions; they don't
   predict accuracy on real company files.
+- The first request after an idle period takes about 5–10 seconds (cold start and the database waking up)
+- Uploads are limited to 4 MB (Lambda's 6 MB request cap).
 
 ## Getting started
 
@@ -158,13 +165,15 @@ cd api
 uv run python -m app.cli reindex
 ```
 
-This re-chunks and re-embeds every document. Vectors are stored on the chunk rows, so nothing else needs rebuilding.
+This re-chunks and re-embeds every document. Vectors are stored on the chunk rows, so nothing else
+needs rebuilding.
 
 ## AWS
 
-Uploaded files go to a private S3 bucket, and the browser opens them through presigned URLs that expire after a few minutes. Approval emails go out through SNS.
+Uploaded files go to a private S3 bucket, and the browser opens them through presigned URLs that expire
+after a few minutes.
 
-The app runs as one IAM user that can do only four things (least privilege):
+The Lambda execution role has one inline policy:
 
 ```json
 {
@@ -176,4 +185,5 @@ The app runs as one IAM user that can do only four things (least privilege):
 }
 ```
 
-No `s3:ListBucket`: the app always knows its keys from the database. The app is hosted on Hugging Face, outside AWS, so it uses an access key instead of an IAM role. On AWS compute (ECS Fargate), it would use a role with no stored keys.
+The app runs on Lambda with an execution role that has only the policy above, so there are no stored AWS keys.
+GitHub Actions deploys with OpenID Connect: a role that only `main` of this repo can assume, allowed to push to one ECR repository and update one function.
